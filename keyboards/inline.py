@@ -120,9 +120,8 @@ def channel_detail_keyboard(channel_id: int, *, is_owner: bool = False, require_
 
 
 def subscription_check_keyboard(channel_link: str, channel_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📢 Перейти в канал", url=channel_link)],
-            [InlineKeyboardButton(text="✅ Проверить", callback_data=f"check_sub:{channel_id}")],
-        ]
-    )
+    rows = []
+    if channel_link:
+        rows.append([InlineKeyboardButton(text="📢 Перейти в канал", url=channel_link)])
+    rows.append([InlineKeyboardButton(text="✅ Проверить", callback_data=f"check_sub:{channel_id}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

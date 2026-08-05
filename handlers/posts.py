@@ -299,15 +299,39 @@ async def _check_subscription_or_request(
     # Пользователь подаёт заявку — после этого он может отправлять посты.
     db.add_channel_request(callback.from_user.id, channel_id)
 
-    channel_link = f"https://t.me/{channel['channel_username']}"
-    title = channel["channel_title"] or f"@{channel['channel_username']}"
-    await callback.message.answer(
-        f"❌ Вы не подписаны на канал <b>{title}</b>.\n\n"
-        f"Подпишитесь и нажмите «Проверить ✅».\n"
-        f"Ваша заявка зарегистрирована — вы уже можете отправить пост.",
-        parse_mode="HTML",
-        reply_markup=subscription_check_keyboard(channel_link, channel_id),
-    )
+    # Для приватных каналов пытаемся получить invite link
+    channel_username = channel["channel_username"]
+    if channel_username.lstrip("-").isdigit() or not channel_username:
+        # Приватный канал — генерируем invite link
+        try:
+            invite_link = await bot.create_chat_invite_link(
+                channel["channel_tg_id"],
+                member_limit=1,
+            )
+            channel_link = invite_link.invite_link
+        except Exception:
+            channel_link = None
+        display = channel["channel_title"] or f"ID {channel['channel_tg_id']}"
+    else:
+        channel_link = f"https://t.me/{channel_username}"
+        display = f"@{channel_username}"
+
+    if channel_link:
+        await callback.message.answer(
+            f"❌ Вы не подписаны на канал <b>{display}</b>.\n\n"
+            f"Подпишитесь и нажмите «Проверить ✅».\n"
+            f"Ваша заявка зарегистрирована — вы уже можете отправить пост.",
+            parse_mode="HTML",
+            reply_markup=subscription_check_keyboard(channel_link, channel_id),
+        )
+    else:
+        await callback.message.answer(
+            f"❌ Вы не подписаны на канал <b>{display}</b>.\n\n"
+            f"Ваша заявка зарегистрирована — вы уже можете отправить пост.\n"
+            f"После подписки нажмите «Проверить ✅».",
+            parse_mode="HTML",
+            reply_markup=subscription_check_keyboard("", channel_id),
+        )
     return False
 
 

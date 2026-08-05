@@ -38,7 +38,8 @@ async def publish_post_to_channel(bot: Bot, post_id: int) -> bool:
     if not channel or not channel["is_active"]:
         return False
 
-    target = f"@{channel['channel_username']}"
+    # Определяем target: для приватных каналов используем channel_tg_id, для публичных — @username
+    target = channel["channel_tg_id"] if channel["channel_tg_id"] else f"@{channel['channel_username']}"
     silent = True  # всегда silent mode
 
     try:
@@ -103,7 +104,8 @@ async def publish_post_to_channel_raw(
     if not channel or not channel["is_active"]:
         return None
 
-    target = f"@{channel['channel_username']}"
+    # Определяем target: для приватных каналов используем channel_tg_id, для публичных — @username
+    target = channel["channel_tg_id"] if channel["channel_tg_id"] else f"@{channel['channel_username']}"
     message_ids = []
 
     try:

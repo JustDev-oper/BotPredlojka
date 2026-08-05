@@ -741,8 +741,10 @@ async def cb_add_channel_start(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(AdminPanelStates.waiting_channel_username)
     await callback.message.edit_text(
         "➕ <b>Добавление канала</b>\n\n"
-        "Отправьте <b>@username</b> канала.\n"
-        "Бот должен быть добавлен в канал с правами администратора.",
+        "Отправьте:\n"
+        "• <b>@username</b> — для публичного канала\n"
+        "• <b>ID</b> (например: -1001234567890) — для закрытого канала\n\n"
+        "Бот должен быть администратором канала.",
         parse_mode="HTML",
         reply_markup=admin_cancel_keyboard(),
     )
@@ -757,14 +759,22 @@ async def process_add_channel(message: Message, state: FSMContext, bot: Bot) -> 
 
     text = (message.text or "").strip().lstrip("@")
     if not text or " " in text:
-        await message.answer("Отправьте @username канала (например: @mychannel)")
+        await message.answer(
+            "Отправьте <b>@username</b> канала (например: @mychannel)\n"
+            "или <b>ID</b> закрытого канала (например: -1001234567890)",
+            parse_mode="HTML",
+        )
         return
 
-    existing = db.get_channel_by_username(text.lower())
+    # Определяем тип: числовой ID или username
+    is_private = text.lstrip("-").isdigit()
+    identifier = text if is_private else text.lower()
+
+    existing = db.get_channel_by_username(identifier)
     if existing and existing["is_active"]:
         await state.clear()
         await message.answer(
-            f"⚠️ Канал <b>@{text}</b> уже добавлен.",
+            f"⚠️ Канал <b>{text}</b> уже добавлен.",
             parse_mode="HTML",
             reply_markup=_panel_kb_for(message.from_user.id),
         )
@@ -781,10 +791,10 @@ async def process_add_channel(message: Message, state: FSMContext, bot: Bot) -> 
     if existing and not existing["is_active"]:
         channel_id = existing["id"]
         with db._transaction() as cur:
-            cur.execute("UPDATE channels SET is_active = 1, channel_title = ?, channel_tg_id = ? WHERE id = ?",
-                        (title, tg_id, channel_id))
+            cur.execute("UPDATE channels SET is_active = 1, channel_title = ?, channel_tg_id = ?, channel_username = ? WHERE id = ?",
+                        (title, tg_id, identifier, channel_id))
     else:
-        channel_id = add_channel_to_db(text.lower(), title, tg_id, message.from_user.id)
+        channel_id = add_channel_to_db(identifier, title, tg_id, message.from_user.id)
 
     # Создаём топики для всех админов
     admin_ids = db.get_all_admins()

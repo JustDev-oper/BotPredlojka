@@ -101,7 +101,8 @@ async def send_payload_to_channel(
     if not channel or not channel["is_active"]:
         return None
 
-    target = f"@{channel['channel_username']}"
+    # Определяем target: для приватных каналов используем channel_tg_id, для публичных — @username
+    target = channel["channel_tg_id"] if channel["channel_tg_id"] else f"@{channel['channel_username']}"
     try:
         if payload["type"] == "text":
             msg = await bot.send_message(
