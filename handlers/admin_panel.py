@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from db.database import db
 from keyboards.admin import (
@@ -1467,6 +1467,90 @@ async def process_auto_delete_time(message: Message, state: FSMContext) -> None:
         parse_mode="HTML",
         reply_markup=auto_delete_list_keyboard(ads) if ads else _panel_kb_for(message.from_user.id),
     )
+
+
+# ── Удаление канала ─────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("ch_delete:"))
+async def cb_channel_delete(callback: CallbackQuery) -> None:
+    if not is_owner(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    try:
+        channel_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+
+    channel = db.get_channel_by_id(channel_id)
+    if not channel:
+        await callback.answer("Канал не най��ен", show_alert=True)
+        return
+
+    title = channel["channel_title"] or f"@{channel['channel_username']}"
+    pending_count = db.count_posts_by_channel(channel_id, "pending")
+    active_count = db.count_posts_by_channel(channel_id, "published")
+
+    await callback.message.edit_text(
+        f"⚠️ <b>Удаление канала</b>\n\n"
+        f"Канал: <b>{title}</b>\n"
+        f"📝 Постов на модерации: <b>{pending_count}</b>\n"
+        f"✅ Опубликовано: <b>{active_count}</b>\n\n"
+        f"⛔ ВНИМАНИЕ: Все данные канала будут удалены:\n"
+        f"• Все посты (на модерации и опубликованные)\n"
+        f"• Настройки водянки\n"
+        f"• Настройки автоудаления\n"
+        f"• Заявки на вступление\n"
+        f"• Топики модерации\n\n"
+        f"Это действие необратимо. Продолжить?",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"ch_delete_confirm:{channel_id}")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="ap:channels")],
+            ]
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ch_delete_confirm:"))
+async def cb_channel_delete_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    if not is_owner(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    try:
+        channel_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+
+    channel = db.get_channel_by_id(channel_id)
+    if not channel:
+        await callback.answer("Канал не найден", show_alert=True)
+        return
+
+    title = channel["channel_title"] or f"@{channel['channel_username']}"
+
+    # Удаляем топики модерации
+    db.delete_all_topics_for_channel(channel_id)
+
+    # Удаляем канал и все связанные данные
+    deleted = db.delete_channel(channel_id)
+    if deleted:
+        await callback.message.edit_text(
+            f"✅ Канал <b>{title}</b> успешно удалён.\n\n"
+            f"Удалены: посты, водянка, автоудаление, заявки, топики.",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="◀️ Назад к каналам", callback_data="ap:channels")],
+                ]
+            ),
+        )
+        await callback.answer()
+    else:
+        await callback.answer("Ошибка при удалении", show_alert=True)
 
 
 @router.callback_query(F.data == "ad_delete_all")

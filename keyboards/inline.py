@@ -115,6 +115,7 @@ def channel_detail_keyboard(channel_id: int, *, is_owner: bool = False, require_
         rows.append([InlineKeyboardButton(text=sub_text, callback_data=f"ch_toggle_sub:{channel_id}")])
         rows.append([InlineKeyboardButton(text="✏️ Переименовать", callback_data=f"ch_rename:{channel_id}")])
         rows.append([InlineKeyboardButton(text="📦 Архивировать", callback_data=f"ch_archive:{channel_id}")])
+        rows.append([InlineKeyboardButton(text="🗑 Удалить канал", callback_data=f"ch_delete:{channel_id}")])
     rows.append([InlineKeyboardButton(text="◀️ Назад к каналам", callback_data="ap:channels")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 

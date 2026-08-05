@@ -542,6 +542,40 @@ class Database:
             cur.execute("UPDATE channels SET require_subscription = ? WHERE id = ?", (new_val, channel_id))
             return bool(new_val)
 
+    def delete_channel(self, channel_id: int) -> bool:
+        """Полное удаление канала и связанных данных из БД."""
+        with self._transaction() as cur:
+            # Удаляем связанные данные в правильном порядке (FK-зависимости)
+            cur.execute("DELETE FROM channel_requests WHERE channel_id = ?", (channel_id,))
+            cur.execute("DELETE FROM auto_delete_posts WHERE channel_id = ?", (channel_id,))
+            cur.execute("DELETE FROM watermarks WHERE channel_id = ?", (channel_id,))
+            cur.execute("DELETE FROM posts WHERE channel_id = ?", (channel_id,))
+            # Удаляем сам канал
+            cur.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
+            return cur.rowcount > 0
+
+    def get_channel_with_stats(self, channel_id: int) -> dict | None:
+        """Получает канал со статистикой."""
+        cur = self.cursor.execute("SELECT * FROM channels WHERE id = ?", (channel_id,))
+        channel = cur.fetchone()
+        if not channel:
+            return None
+        # Количество постов
+        self.cursor.execute(
+            "SELECT COUNT(*) as cnt FROM posts WHERE channel_id = ?",
+            (channel_id,),
+        )
+        pending = self.cursor.fetchone()["cnt"]
+        return {
+            "id": channel["id"],
+            "channel_username": channel["channel_username"],
+            "channel_title": channel["channel_title"],
+            "channel_tg_id": channel["channel_tg_id"],
+            "is_active": channel["is_active"],
+            "require_subscription": channel["require_subscription"],
+            "pending_posts": pending,
+        }
+
     # ── Watermarks ────────────────────────────────────────────
 
     def set_watermark(self, channel_id: int, text: str) -> None:
