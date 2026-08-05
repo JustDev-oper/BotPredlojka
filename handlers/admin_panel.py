@@ -179,7 +179,7 @@ async def cb_fs_edit(callback: CallbackQuery, state: FSMContext) -> None:
     if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
-    key = callback.data.split(":", 2)[2]
+    key = callback.data.split(":")[2]
     if key not in ("users", "posts"):
         await callback.answer("Неизвестное поле", show_alert=True)
         return
@@ -330,6 +330,80 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
     tg_id = _parse_user_target(message.text or "")
     if not tg_id:
         await message.answer("Не найден. Формат: @username или ID")
+        return
+    user = db.get_user_by_telegram_id(tg_id)
+    if not user:
+        await state.clear()
+        await message.answer(
+            f"Пользователь <code>{tg_id}</code> не найден в базе.",
+            parse_mode="HTML",
+            reply_markup=_panel_kb_for(message.from_user.id),
+        )
+        return
+    await _show_user_actions(message, user)
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("usr_view:"))
+async def cb_user_view(callback: CallbackQuery) -> None:
+    if not is_owner(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    try:
+        tg_id = int(callback.data.split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+    user = db.get_user_by_telegram_id(tg_id)
+    if not user:
+        await callback.answer("Пользователь не найден", show_alert=True)
+        return
+    await _show_user_actions(callback, user)
+
+
+async def _mute_user(bot: Bot, tg_id: int, minutes: int) -> None:
+    until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    db.set_muted_until(tg_id, until)
+    try:
+        await bot.send_message(tg_id, f"🔇 Вы замучены на {minutes} мин.")
+    except Exception:
+        pass
+
+
+async def _show_user_actions(target: Message | CallbackQuery, user) -> None:
+    text = (
+        f"👤 <b>{user['full_name'] or '—'}</b>\n"
+        f"Юзернейм: {'@' + user['username'] if user['username'] else 'нет username'}\n"
+        f"ID: <code>{user['tg_id']}</code>\n"
+        f"Статус: {'🚫 в бане' if user['banned'] else '✅ активен'}\n"
+        f"Админ: {'👮 да' if db.is_admin(user['tg_id']) else 'нет'}"
+    )
+    is_muted = db.is_muted(user["tg_id"])
+    kb = user_action_keyboard(
+        user["tg_id"],
+        is_banned=bool(user["banned"]),
+        is_admin=db.is_admin(user["tg_id"]) and not is_owner(user["tg_id"]),
+        is_muted=is_muted,
+    )
+    if isinstance(target, CallbackQuery):
+        await target.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        await target.answer()
+    else:
+        await target.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("usr_ban:"))
+async def cb_user_ban(callback: CallbackQuery, bot: Bot) -> None:
+    if not is_owner(callback.from_user.id):
+        await callback.answer("Нет доступа", show_alert=True)
+        return
+    try:
+        tg_id = int(callback.data.split(":", 1)[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка данных", show_alert=True)
+        return
+    if is_owner(tg_id):
+        await callback.answer("Нельзя забанить владельца", show_alert=True)
         return
     db.set_banned(tg_id, True)
     await notify_user_banned(bot, tg_id)
@@ -547,7 +621,7 @@ async def bc_ch_toggle(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
-        channel_id = int(callback.data.split(":")[2])
+        channel_id = int(callback.data.split(":")[1])
     except (IndexError, ValueError):
         await callback.answer("Ошибка данных", show_alert=True)
         return
@@ -1232,7 +1306,7 @@ async def cb_del_moderator(callback: CallbackQuery, state: FSMContext, bot: Bot)
         await callback.answer("Только для владельца", show_alert=True)
         return
     try:
-        tg_id = int(callback.data.split(":", 2)[2])
+        tg_id = int(callback.data.split(":")[2])
     except (IndexError, ValueError):
         await callback.answer("Ошибка данных", show_alert=True)
         return
