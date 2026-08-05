@@ -1,58 +1,45 @@
 import asyncio
 import logging
-import sys
-from datetime import datetime, timezone, timedelta
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import config
-from db.database import Database, db
-from handlers import get_routers
-from services.auto_delete import auto_delete_loop
-from di.container import setup_di
+from config import BOT_TOKEN
+from database import init_db
+from middlewares import BanCheckMiddleware
+from scheduler import autodelete_loop
 
-MSK = timezone(timedelta(hours=3))
+from handlers import admin, applications, autodelete, broadcast_bot, broadcast_channels, moderation, user
 
-
-class MSKFormatter(logging.Formatter):
-    def formatTime(self, record, datefmt=None):
-        dt = datetime.fromtimestamp(record.created, tz=MSK)
-        if datefmt:
-            return dt.strftime(datefmt)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(MSKFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-logging.basicConfig(level=logging.INFO, handlers=[handler])
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    if not config.BOT_TOKEN:
-        raise ValueError("BOT_TOKEN не задан в .env")
-    if not config.OWNER_ID:
-        raise ValueError("OWNER_ID не задан в .env")
+    await init_db()
 
-    bot = Bot(
-        token=config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-    )
-    dp = Dispatcher()
-    dp.include_routers(*get_routers())
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher(storage=MemoryStorage())
 
-    # Register dependencies in DI container
-    setup_di({"dp": dp, "db": db})
+    dp.message.middleware(BanCheckMiddleware())
+    dp.callback_query.middleware(BanCheckMiddleware())
 
-    logging.info("Бот запущен")
-    try:
-        await asyncio.gather(
-            dp.start_polling(bot),
-            auto_delete_loop(bot),
-        )
-    finally:
-        logging.info("Бот остановлен")
+    # Порядок важен: более специфичные роутеры (admin/moderation/...) регистрируем раньше,
+    # user-роутер — последним, т.к. содержит "ловящие всё" хендлеры по состоянию FSM.
+    dp.include_router(admin.router)
+    dp.include_router(applications.router)
+    dp.include_router(broadcast_bot.router)
+    dp.include_router(broadcast_channels.router)
+    dp.include_router(autodelete.router)
+    dp.include_router(moderation.router)
+    dp.include_router(user.router)
+
+    asyncio.create_task(autodelete_loop(bot))
+
+    log.info("Бот запущен")
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
