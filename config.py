@@ -8,7 +8,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
 # управлению админами и команде /rndadm
 OWNER_ID = 5877007064
 
-DB_PATH = os.getenv("DB_PATH", "bot.db")
+DB_PATH = os.getenv("DB_PATH", "./data/bot.db")
 
 # --- Антиспам ----------------------------------------------------------------
 ANTISPAM_POST_LIMIT = 2        # постов
