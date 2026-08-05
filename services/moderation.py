@@ -4,7 +4,7 @@ Moderation service for handling post moderation.
 
 from datetime import datetime
 from sqlalchemy.orm import Session
-from telegram import Bot
+from aiogram import Bot
 from database.models import Post, User, Channel, Ban
 from utils.helpers import format_post_info
 
@@ -154,4 +154,3 @@ class ModerationService:
 
         db.commit()
         return True
-

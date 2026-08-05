@@ -119,13 +119,11 @@ async def channel_selected(query: CallbackQuery, state: FSMContext):
             return
 
         # User not subscribed - show subscription request
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        from aiogram.types import InlineKeyboardButton as AIInlineKeyboardButton
-        from aiogram.types import InlineKeyboardMarkup as AIInlineKeyboardMarkup
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-        keyboard = AIInlineKeyboardMarkup(inline_keyboard=[
-            [AIInlineKeyboardButton(text="Перейти на канал", url=f"https://t.me/{channel.channel_username}")],
-            [AIInlineKeyboardButton(text="✅ Я подписался", callback_data=f"verify_sub_{channel_id}")],
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Перейти на канал", url=f"https://t.me/{channel.channel_username}")],
+            [InlineKeyboardButton(text="✅ Я подписался", callback_data=f"verify_sub_{channel_id}")],
         ])
 
         await query.edit_message_text(
@@ -260,6 +258,3 @@ async def receive_post(message: Message, state: FSMContext):
 
     finally:
         close_db(db)
-
-
-
