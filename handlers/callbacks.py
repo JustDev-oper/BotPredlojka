@@ -30,7 +30,7 @@ async def _update_all_topic_messages(bot: Bot, post_id: int, status: str) -> Non
                 reply_markup=kb,
             )
         except Exception:
-            pass
+            logger.warning("Не удалось обновить markup для post=%s topic admin=%s", post_id, msg["admin_tg_id"])
 
 
 def _parse_callback_id(data: str, index: int = 1) -> int | None:

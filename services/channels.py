@@ -16,6 +16,48 @@ logger = logging.getLogger(__name__)
 BOT_ADMIN_STATUSES = {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR}
 
 
+def is_channel_private(channel: dict) -> bool:
+    """Определяет, является ли канал приватным.
+
+    Приватный канал:
+    - channel_username — числовой ID (например "-1002209784231")
+    - channel_tg_id — отрицательное число
+    """
+    channel_username = channel.get("channel_username", "")
+    channel_tg_id = channel.get("channel_tg_id")
+
+    # По username: если это число (с -), значит приватный
+    if channel_username and channel_username.lstrip("-").isdigit():
+        return True
+    # По tg_id: отрицательное число = приватный
+    if isinstance(channel_tg_id, int) and channel_tg_id < 0:
+        return True
+
+    return False
+
+
+def get_channel_chat_id(channel: dict) -> int | None:
+    """Возвращает chat_id канала для API-вызовов.
+
+    Для приватных каналов возвращает numeric ID (tg_chat_id или username).
+    Для публичных — None (они обрабатываются по username).
+    """
+    channel_tg_id = channel.get("channel_tg_id")
+    channel_username = channel.get("channel_username")
+
+    # Приоритет: channel_tg_id
+    if channel_tg_id and isinstance(channel_tg_id, int):
+        return channel_tg_id
+    # Fallback: username для приватного канала
+    if channel_username and channel_username.lstrip("-").isdigit():
+        try:
+            return int(channel_username)
+        except ValueError:
+            pass
+
+    return None
+
+
 async def is_user_subscribed(bot: Bot, user_id: int, channel_tg_id: int) -> bool:
     """Check if user is subscribed to the channel.
 

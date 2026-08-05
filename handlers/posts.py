@@ -12,7 +12,7 @@ from keyboards.inline import (
     moderation_keyboard,
     subscription_check_keyboard,
 )
-from services.channels import is_user_subscribed, check_bot_permissions
+from services.channels import is_user_subscribed, check_bot_permissions, is_channel_private, get_channel_chat_id
 from states.admin import UserStates
 from utils.antispam import check_antispam
 from utils.helpers import build_admin_post_text_from_db
@@ -23,7 +23,7 @@ router = Router(name="posts")
 
 _media_group_buffers: dict[str, list[Message]] = {}
 _media_group_timers: dict[str, asyncio.Task] = {}
-_MAX_MEDIA_GROUPS = 50
+_MAX_MEDIA_GROUPS = 200
 
 
 def _cleanup_old_media_groups() -> None:
@@ -32,8 +32,21 @@ def _cleanup_old_media_groups() -> None:
         for key in oldest_keys:
             _media_group_buffers.pop(key, None)
             timer = _media_group_timers.pop(key, None)
-            if timer:
+            if timer and not timer.done():
                 timer.cancel()
+
+
+def _cancel_media_group_timer(media_group_id: str) -> None:
+    """Cancel pending media group timer and clean up buffers."""
+    timer = _media_group_timers.pop(media_group_id, None)
+    if timer and not timer.done():
+        timer.cancel()
+
+
+def _clear_media_group_buffer(media_group_id: str) -> None:
+    """Clear all buffered messages for a media group."""
+    _media_group_buffers.pop(media_group_id, None)
+    _cancel_media_group_timer(media_group_id)
 
 
 def _extract_media_group_data(messages: list[Message]) -> dict | None:
@@ -104,7 +117,7 @@ def _extract_content_data(message: Message) -> dict | None:
 
 async def _process_media_group(chat_id: int, media_group_id: str, bot: Bot, state: FSMContext) -> None:
     messages = _media_group_buffers.pop(media_group_id, [])
-    _media_group_timers.pop(media_group_id, None)
+    _cancel_media_group_timer(media_group_id)
 
     if not messages:
         return
@@ -277,12 +290,12 @@ async def _send_post_to_admin_topics(bot: Bot, post_id: int, channel_id: int, co
 
 
 async def _check_subscription_or_request(
-        callback: CallbackQuery, channel_id: int, bot: Bot
+        callback: CallbackQuery, channel_id: int, bot: Bot, state: FSMContext
 ) -> bool:
     """Проверяет подписку.
 
-    - Публичный канал: подписка ОБЯЗАТЕЛЬНА. Если не подписан — создаём заявку,
-      показываем ссылку и кнопку «Проверить ✅». Отправка НЕ разрешена до подписки.
+    - Публичный канал: подписка ОБЯЗАТЕЛЬНА. Если не подписан — показываем ссылку
+      и кнопку «Проверить ✅». Отправка НЕ разрешена до подписки.
     - Приватный канал: если не подписан — создаём заявку, даём invite-ссылку
       и разблокируем отправку постов.
 
@@ -293,24 +306,13 @@ async def _check_subscription_or_request(
         await callback.answer("Канал недоступен", show_alert=True)
         return False
 
-    tg_chat_id = channel["channel_tg_id"]
+    # Используем утилиту для определения типа канала
+    channel_is_private = is_channel_private(channel)
+    tg_chat_id = get_channel_chat_id(channel)
     channel_username = channel["channel_username"]
 
-    # Определяем приватный канал: по username (числовой ID) или по tg_chat_id
-    is_private = channel_username and channel_username.lstrip("-").isdigit()
-
-    # Формат приватного канала Telegram: отрицательное число (например -1002209784231)
-    if isinstance(tg_chat_id, int) and tg_chat_id < 0:
-        is_private = True
-        # Если tg_chat_id пустой, но username — число, используем его
-        if not tg_chat_id:
-            try:
-                tg_chat_id = int(channel_username)
-            except ValueError:
-                tg_chat_id = None
-
     # Для приватных каналов проверяем, что tg_chat_id корректен
-    if is_private:
+    if channel_is_private:
         if not tg_chat_id or not isinstance(tg_chat_id, int) or tg_chat_id > 0:
             # Нет корректного ID — не можем проверить, показываем информацию о канале
             display = channel["channel_title"] or channel_username or f"ID {tg_chat_id}"
@@ -328,7 +330,7 @@ async def _check_subscription_or_request(
         if not bot_ok:
             logger.warning("Bot permissions check failed for channel %s: %s", tg_chat_id, bot_msg)
             # Бот не может проверить подписку — показываем invite-ссылку для приватных каналов
-            if is_private:
+            if channel_is_private:
                 display = channel["channel_title"] or f"ID {tg_chat_id}"
                 await callback.message.answer(
                     f"⚠️ Бот не может проверить подписку в канале <b>{display}</b>.\n\n"
@@ -343,10 +345,21 @@ async def _check_subscription_or_request(
     if subscribed:
         return True
 
-    if is_private:
+    if channel_is_private:
         # Приватный канал — доступ открывается после подачи заявки в Telegram
-        if db.has_channel_request(callback.from_user.id, channel_id):
+        has_request = db.has_channel_request(callback.from_user.id, channel_id)
+        if has_request:
             # Заявка уже подана — доступ открыт
+            await state.clear()
+            await state.update_data(channel_id=channel_id)
+            await state.set_state(UserStates.waiting_post_content)
+            title = channel["channel_title"] or f"@{channel['channel_username']}"
+            await callback.message.edit_text(
+                f"📢 Канал: <b>{title}</b>\n\n"
+                f"✅ Заявка принята.\n"
+                f"Отправьте ваш пост (текст, фото, видео или документ):",
+                parse_mode="HTML",
+            )
             return True
 
         # Показываем invite-ссылку, чтобы пользователь подал заявку на вступление
@@ -365,7 +378,7 @@ async def _check_subscription_or_request(
         display = channel["channel_title"] or f"ID {tg_chat_id}"
 
         if channel_link:
-            await callback.message.answer(
+            await callback.message.edit_text(
                 f"❌ Для отправки поста в канал <b>{display}</b> нужно подать заявку на вступление.\n\n"
                 f"📢 Перейдите по ссылке и нажмите «Отправить запрос»:\n{channel_link}\n\n"
                 f"После подачи заявки нажмите «Проверить ✅».",
@@ -373,7 +386,7 @@ async def _check_subscription_or_request(
                 reply_markup=subscription_check_keyboard(channel_link, channel_id),
             )
         else:
-            await callback.message.answer(
+            await callback.message.edit_text(
                 f"❌ Для отправки поста в канал <b>{display}</b> нужно подать заявку на вступление.\n\n"
                 f"После подачи заявки нажмите «Проверить ✅».",
                 parse_mode="HTML",
@@ -381,11 +394,10 @@ async def _check_subscription_or_request(
             )
         return False
 
-    # Публичный канал — подписка обязательна
-    db.add_channel_request(callback.from_user.id, channel_id)
+    # Публичный канал — подписка обязательна (НИЧЕГО НЕ СОЗДАЁМ)
     display = f"@{channel_username}"
     channel_link = f"https://t.me/{channel_username}"
-    await callback.message.answer(
+    await callback.message.edit_text(
         f"❌ Для отправки поста в канал <b>{display}</b> нужно быть подписанным.\n\n"
         f"Подпишитесь на канал и нажмите «Проверить ✅».",
         parse_mode="HTML",
@@ -412,37 +424,33 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContex
         await callback.answer("Канал недоступен", show_alert=True)
         return
 
-    tg_chat_id = channel["channel_tg_id"]
+    # Определяем тип канала
+    channel_is_private = is_channel_private(channel)
+    tg_chat_id = get_channel_chat_id(channel)
 
-    # Fallback: если tg_chat_id пустой, но channel_username — числовой ID приватного канала
-    if not tg_chat_id and channel["channel_username"]:
-        try:
-            tg_chat_id = int(channel["channel_username"])
-        except ValueError:
-            pass
+    # --- Приватный канал: доступ по has_request ---
+    if channel_is_private:
+        has_request = db.has_channel_request(callback.from_user.id, channel_id)
+        if has_request:
+            await callback.answer("✅ Доступ открыт!", show_alert=False)
+            await state.clear()
+            await state.update_data(channel_id=channel_id)
+            await state.set_state(UserStates.waiting_post_content)
+            title = channel["channel_title"] or f"@{channel['channel_username']}"
+            await callback.message.edit_text(
+                f"📢 Канал: <b>{title}</b>\n\n"
+                f"✅ Заявка принята.\n"
+                f"Отправьте ваш пост (текст, фото, видео или документ):",
+                parse_mode="HTML",
+            )
+            return
 
-    # Проверка через has_request (заявка уже подана)
-    has_request = db.has_channel_request(callback.from_user.id, channel_id)
-
-    if has_request:
-        # Пользователь подал заявку — доступ открываем
-        await callback.answer("✅ Доступ открыт!", show_alert=False)
-        await state.clear()
-        await state.update_data(channel_id=channel_id)
-        await state.set_state(UserStates.waiting_post_content)
-        title = channel["channel_title"] or f"@{channel['channel_username']}"
-        await callback.message.edit_text(
-            f"📢 Канал: <b>{title}</b>\n\n"
-            f"✅ Заявка принята.\n"
-            f"Отправьте ваш пост (текст, фото, видео или документ):",
-            parse_mode="HTML",
-        )
+        await callback.answer("❌ Заявка ещё не рассмотрена", show_alert=True)
         return
 
-    # Проверяем подписку через Telegram API
+    # --- Публичный канал: обязательная проверка подписки через API ---
     subscribed = False
     if tg_chat_id and isinstance(tg_chat_id, int):
-        # Сначала проверяем права бота в канале
         bot_ok, bot_msg = await check_bot_permissions(bot, tg_chat_id)
         if bot_ok:
             subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
@@ -450,10 +458,7 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContex
             logger.warning("Bot permissions check failed in check_sub for channel %s: %s", tg_chat_id, bot_msg)
 
     if subscribed:
-        # Создаём запись о заявке для публичных каналов
-        if not channel["channel_username"].lstrip("-").isdigit():
-            db.add_channel_request(callback.from_user.id, channel_id)
-
+        db.add_channel_request(callback.from_user.id, channel_id)
         await callback.answer("✅ Доступ открыт!", show_alert=False)
         await state.clear()
         await state.update_data(channel_id=channel_id)
@@ -489,7 +494,7 @@ async def select_channel_post(callback: CallbackQuery, state: FSMContext, bot: B
         return
 
     # Всегда проверяем подписку. Если не подписан — создаём заявку, но отправку разрешаем.
-    can_send = await _check_subscription_or_request(callback, channel_id, bot)
+    can_send = await _check_subscription_or_request(callback, channel_id, bot, state)
     if not can_send:
         await callback.answer()
         return
@@ -530,33 +535,7 @@ async def handle_user_post(message: Message, bot: Bot, state: FSMContext) -> Non
 
     current_state = await state.get_state()
 
-    if current_state == UserStates.waiting_post_content.state:
-        data = await state.get_data()
-        channel_id = data.get("channel_id")
-        if channel_id:
-            if message.media_group_id:
-                mg_id = message.media_group_id
-                _cleanup_old_media_groups()
-                if mg_id not in _media_group_buffers:
-                    _media_group_buffers[mg_id] = []
-                _media_group_buffers[mg_id].append(message)
-
-                if mg_id in _media_group_timers:
-                    _media_group_timers[mg_id].cancel()
-
-                async def _delayed(mid: str = mg_id, chat: int = message.chat.id) -> None:
-                    await asyncio.sleep(1.5)
-                    _media_group_timers.pop(mid, None)
-                    await _process_media_group(chat, mid, bot, state)
-
-                _media_group_timers[mg_id] = asyncio.create_task(_delayed())
-                return
-
-            content_data = _extract_content_data(message)
-            if content_data:
-                await _create_post_with_channel(message, content_data, channel_id, bot, state)
-            return
-
+    # --- media group handling (early return for all states) ---
     if message.media_group_id:
         mg_id = message.media_group_id
         _cleanup_old_media_groups()
@@ -564,16 +543,26 @@ async def handle_user_post(message: Message, bot: Bot, state: FSMContext) -> Non
             _media_group_buffers[mg_id] = []
         _media_group_buffers[mg_id].append(message)
 
-        if mg_id in _media_group_timers:
-            _media_group_timers[mg_id].cancel()
+        _cancel_media_group_timer(mg_id)
 
-        async def _delayed2(mid: str = mg_id, chat: int = message.chat.id) -> None:
-            await asyncio.sleep(1.5)
-            _media_group_timers.pop(mid, None)
-            await _process_media_group(chat, mid, bot, state)
+        async def _delayed(m_id: str = mg_id, c_id: int = message.chat.id) -> None:
+            _media_group_timers.pop(m_id, None)
+            try:
+                await _process_media_group(c_id, m_id, bot, state)
+            except Exception:
+                logger.exception("Ошибка обработки media group %s", m_id)
 
-        _media_group_timers[mg_id] = asyncio.create_task(_delayed2())
+        _media_group_timers[mg_id] = asyncio.create_task(_delayed())
         return
+
+    if current_state == UserStates.waiting_post_content.state:
+        data = await state.get_data()
+        channel_id = data.get("channel_id")
+        if channel_id:
+            content_data = _extract_content_data(message)
+            if content_data:
+                await _create_post_with_channel(message, content_data, channel_id, bot, state)
+            return
 
     db.upsert_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
 

@@ -35,7 +35,7 @@ async def delete_post_messages(bot: Bot, ad) -> bool:
             try:
                 await bot.delete_message(channel["channel_tg_id"], msg_id)
             except Exception:
-                pass
+                logger.warning("Не удалось удалить сообщение %s в канале %s", msg_id, channel["channel_tg_id"])
         return True
     except Exception:
         logger.exception("Ошибка автоудаления поста %s", ad["post_id"])
@@ -57,7 +57,7 @@ async def auto_delete_loop(bot: Bot) -> None:
                         try:
                             await bot.send_message(admin_id, text)
                         except Exception:
-                            pass
+                            logger.warning("Не удалось уведомить админа %s об автоудалении поста %s", admin_id, ad["id"])
         except Exception:
             logger.exception("Ошибка в цикле автоудаления")
         await asyncio.sleep(CHECK_INTERVAL_SECONDS)

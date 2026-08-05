@@ -2,14 +2,17 @@
 
 Provides a single Database class with CRUD operations for users, posts,
 spam tracking, channels, watermarks, auto-delete, requests, and statistics.
+All public methods are thread-safe (uses connection-level locking).
 """
 
+import asyncio
 import json
 import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -29,13 +32,22 @@ def _to_utc(dt: datetime) -> datetime:
 
 
 class Database:
+    """Database with connection-level locking for async safety."""
+
     def __init__(self) -> None:
         self.connection = sqlite3.connect(DB_PATH, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.execute("PRAGMA foreign_keys=ON")
         self.cursor = self.connection.cursor()
+        # Asyncio-compatible lock to serialise all DB operations
+        self._lock = asyncio.Lock()
         self._init_tables()
+
+    async def _execute(self, func, *args):
+        """Run a DB operation under the lock — serialises all calls."""
+        async with self._lock:
+            return func(*args)
 
     @contextmanager
     def _transaction(self):
@@ -47,6 +59,7 @@ class Database:
             raise
 
     def _init_tables(self) -> None:
+        # This runs only once on init (sync), not under async lock.
         # Сначала удаляем старые таблицы, которые больше не нужны
         self.cursor.executescript("""
             DROP TABLE IF EXISTS message_stats;
@@ -161,8 +174,18 @@ class Database:
         self._ensure_owner()
 
     def _table_has_column(self, table: str, column: str) -> bool:
-        """Проверяет, существует ли колонка в таблице."""
+        """Check if a column exists in a table."""
         try:
+            known_tables = {
+                "users", "posts", "channels", "auto_delete_posts",
+                "watermarks", "post_topic_messages", "reply_map",
+                "fake_stats", "admin_channel_topics", "channel_requests",
+                "user_post_count",
+            }
+            if table not in known_tables:
+                logger.warning("Unknown table in _table_has_column: %s", table)
+                return False
+            # PRAGMA doesn't accept parameters — table name is validated above
             self.cursor.execute(f"PRAGMA table_info({table})")
             columns = [row[1] for row in self.cursor.fetchall()]
             return column in columns
@@ -245,6 +268,14 @@ class Database:
         self.cursor.execute("SELECT * FROM users WHERE tg_id = ?", (tg_id,))
         return self.cursor.fetchone()
 
+    @lru_cache(maxsize=256)
+    def _is_admin_cached(self, tg_id: int) -> bool:
+        """Cached admin check — invalidated on admin changes."""
+        if self.is_owner(tg_id):
+            return True
+        user = self.get_user_by_telegram_id(tg_id)
+        return bool(user and user["is_admin"])
+
     def create_user(
         self,
         tg_id: int,
@@ -280,6 +311,7 @@ class Database:
     def set_admin(self, tg_id: int, is_admin: bool) -> None:
         with self._transaction() as cur:
             cur.execute("UPDATE users SET is_admin = ? WHERE tg_id = ?", (int(is_admin), tg_id))
+        self.invalidate_admin_cache()
 
     def set_muted_until(self, tg_id: int, until: datetime | None) -> None:
         with self._transaction() as cur:
@@ -312,8 +344,11 @@ class Database:
     def is_admin(self, tg_id: int) -> bool:
         if self.is_owner(tg_id):
             return True
-        user = self.get_user_by_telegram_id(tg_id)
-        return bool(user and user["is_admin"])
+        return self._is_admin_cached(tg_id)
+
+    def invalidate_admin_cache(self) -> None:
+        """Call after set_admin() to clear the LRU cache."""
+        self._is_admin_cached.cache_clear()
 
     def is_moderator(self, tg_id: int) -> bool:
         """Модератор — это админ, но не владелец."""

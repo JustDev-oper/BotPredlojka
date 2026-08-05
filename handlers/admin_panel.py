@@ -43,6 +43,9 @@ from utils.helpers import format_statistics, is_owner, notify_user_banned
 
 logger = logging.getLogger(__name__)
 
+# Store background tasks to prevent GC and track exceptions
+_active_tasks: set[asyncio.Task] = set()
+
 router = Router(name="admin_panel")
 
 MSK = timezone(timedelta(hours=3))
@@ -367,7 +370,7 @@ async def _mute_user(bot: Bot, tg_id: int, minutes: int) -> None:
     try:
         await bot.send_message(tg_id, f"🔇 Вы замучены на {minutes} мин.")
     except Exception:
-        pass
+        logger.warning("Не удалось уведомить пользователя %s о муте", tg_id)
 
 
 async def _show_user_actions(target: Message | CallbackQuery, user) -> None:
@@ -585,10 +588,20 @@ async def broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("Рассылка запущена…")
 
-    asyncio.create_task(run_broadcast_background(
+    async def _task_wrapper(coro, cb_id: int) -> None:
+        try:
+            await coro
+        except Exception:
+            logger.exception("Ошибка в background task для admin %s", cb_id)
+        finally:
+            _active_tasks.discard(t)
+
+    t = asyncio.create_task(_task_wrapper(run_broadcast_background(
         bot, callback.from_user.id, payload,
         disable_web_page_preview=True,
-    ))
+    ), callback.from_user.id))
+    _active_tasks.add(t)
+    t.add_done_callback(lambda task: _active_tasks.discard(task))
     await state.clear()
 
 
@@ -769,10 +782,22 @@ async def bc_ch_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -> No
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("Публикация запущена…")
 
-    asyncio.create_task(run_channel_broadcast(
-        bot, callback.from_user.id, payload, list(selected),
-        auto_delete_hours=auto_delete,
+    async def _ch_task_wrapper(coro, cb_id: int) -> None:
+        try:
+            await coro
+        except Exception:
+            logger.exception("Ошибка в background task для admin %s", cb_id)
+        finally:
+            _active_tasks.discard(t)
+
+    t = asyncio.create_task(_ch_task_wrapper(
+        run_channel_broadcast(
+            bot, callback.from_user.id, payload, list(selected),
+            auto_delete_hours=auto_delete,
+        ), callback.from_user.id,
     ))
+    _active_tasks.add(t)
+    t.add_done_callback(lambda task: _active_tasks.discard(task))
     await state.clear()
 
 
@@ -783,10 +808,11 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
     try:
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
     except Exception:
+        logger.warning("_safe_edit: failed to edit message, trying delete+send")
         try:
             await callback.message.delete()
         except Exception:
-            pass
+            logger.warning("_safe_edit: failed to delete message")
         await callback.message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
 
 
@@ -1023,7 +1049,7 @@ async def cb_channel_archive(callback: CallbackQuery, state: FSMContext, bot: Bo
         try:
             await bot.delete_forum_topic(topic["admin_tg_id"], topic["topic_id"])
         except Exception:
-            pass
+            logger.warning("Не удалось удалить топик канала %s для админа %s", channel_id, topic["admin_tg_id"])
     db.delete_all_topics_for_channel(channel_id)
     db.deactivate_channel(channel_id)
     await state.clear()
@@ -1297,7 +1323,7 @@ async def process_new_admin_id(message: Message, state: FSMContext, bot: Bot) ->
             f"Теперь вы можете принимать посты.",
         )
     except Exception:
-        pass
+        logger.warning("Не удалось уведомить нового модератора %s о назначении", tg_id)
 
 
 @router.callback_query(F.data.startswith("ap:del_mod:"))
@@ -1325,7 +1351,7 @@ async def cb_del_moderator(callback: CallbackQuery, state: FSMContext, bot: Bot)
     try:
         await bot.send_message(tg_id, "😢 Вы больше не модератор.")
     except Exception:
-        pass
+        logger.warning("Не удалось уведомить пользователя %s о снятии с модератора", tg_id)
 
 
 # ── Автоудаление ──────────────────────────────────────────────

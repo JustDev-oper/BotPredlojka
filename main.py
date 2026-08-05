@@ -8,8 +8,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from config import config
+from db.database import Database, db
 from handlers import get_routers
 from services.auto_delete import auto_delete_loop
+from di.container import setup_di
 
 MSK = timezone(timedelta(hours=3))
 
@@ -39,6 +41,9 @@ async def main() -> None:
     )
     dp = Dispatcher()
     dp.include_routers(*get_routers())
+
+    # Register dependencies in DI container
+    setup_di({"dp": dp, "db": db})
 
     logging.info("Бот запущен")
     try:

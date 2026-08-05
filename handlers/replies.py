@@ -56,9 +56,13 @@ async def _admin_reply(
         )
     except Exception:
         logger.warning("Не удалось отправить ответ модератора пользователю %s", user_tg_id)
-        await message.answer(
-            "Не удалось отправить (возможно, пользователь заблокировал бота)."
-        )
+        try:
+            await message.answer(
+                "Не удалось отправить (возможно, пользователь заблокировал бота)."
+            )
+        except Exception:
+            logger.warning("Не удалось отправить сообщение пользователю %s при попытке ответить", user_tg_id)
+
 
 
 async def _user_reply(
@@ -95,5 +99,6 @@ async def _user_reply(
         await bot.send_message(target_id, admin_text, parse_mode="HTML")
     except Exception:
         logger.warning("Не удалось переслать ответ пользователя модератору %s", target_id)
-
-    await message.answer("Ваш ответ отправлен модератору.")
+        await message.answer("Ошибка при отправке ответа модератору.")
+    else:
+        await message.answer("Ваш ответ отправлен модератору.")
