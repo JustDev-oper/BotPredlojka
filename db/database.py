@@ -47,6 +47,15 @@ class Database:
             raise
 
     def _init_tables(self) -> None:
+        # Сначала удаляем старые таблицы, которые больше не нужны
+        self.cursor.executescript("""
+            DROP TABLE IF EXISTS message_stats;
+            DROP TABLE IF EXISTS spam_log;
+            DROP TABLE IF EXISTS admin_requests;
+        """)
+        self.connection.commit()
+
+        # Создаём таблицы по одной, чтобы избежать ошибок при конфликте схем
         self.cursor.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,19 +66,6 @@ class Database:
                 is_admin INTEGER DEFAULT 0,
                 muted_until TEXT,
                 spam_level INTEGER DEFAULT 0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_tg_id INTEGER NOT NULL,
-                content_type TEXT NOT NULL,
-                file_id TEXT,
-                file_ids TEXT,
-                caption TEXT,
-                text_content TEXT,
-                status TEXT DEFAULT 'pending',
-                channel_id INTEGER,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -117,8 +113,7 @@ class Database:
 
             CREATE TABLE IF NOT EXISTS watermarks (
                 channel_id INTEGER PRIMARY KEY,
-                text TEXT NOT NULL,
-                FOREIGN KEY (channel_id) REFERENCES channels(id)
+                text TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS auto_delete_posts (
@@ -145,7 +140,15 @@ class Database:
                 post_count INTEGER DEFAULT 0,
                 last_post_at TEXT
             );
+        """)
+        self.connection.commit()
 
+        # Миграция: проверяем и создаём таблицу posts заново если схема устарела
+        self._migrate_posts_table()
+        self._migrate_channels_table()
+
+        # Индексы (создаём после миграции)
+        self.cursor.executescript("""
             CREATE INDEX IF NOT EXISTS idx_posts_channel_status ON posts(channel_id, status);
             CREATE INDEX IF NOT EXISTS idx_posts_user ON posts(user_tg_id);
             CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
@@ -156,6 +159,73 @@ class Database:
         """)
         self.connection.commit()
         self._ensure_owner()
+
+    def _table_has_column(self, table: str, column: str) -> bool:
+        """Проверяет, существует ли колонка в таблице."""
+        try:
+            self.cursor.execute(f"PRAGMA table_info({table})")
+            columns = [row[1] for row in self.cursor.fetchall()]
+            return column in columns
+        except sqlite3.OperationalError:
+            return False
+
+    def _table_exists(self, table: str) -> bool:
+        self.cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        )
+        return self.cursor.fetchone() is not None
+
+    def _migrate_posts_table(self) -> None:
+        """Если таблица posts существует, но не содержит нужных колонок — пересоздаём."""
+        if not self._table_exists("posts"):
+            self.cursor.execute("""
+                CREATE TABLE posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_tg_id INTEGER NOT NULL,
+                    content_type TEXT NOT NULL,
+                    file_id TEXT,
+                    file_ids TEXT,
+                    caption TEXT,
+                    text_content TEXT,
+                    status TEXT DEFAULT 'pending',
+                    channel_id INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self.connection.commit()
+            return
+
+        # Проверяем наличие обязательных колонок
+        required = {"user_tg_id", "content_type", "file_id", "file_ids", "caption", "text_content", "status", "channel_id"}
+        existing = set()
+        self.cursor.execute("PRAGMA table_info(posts)")
+        for row in self.cursor.fetchall():
+            existing.add(row[1])
+
+        if not required.issubset(existing):
+            # Схема не совпадает — пересоздаём таблицу
+            self.cursor.execute("DROP TABLE posts")
+            self.cursor.execute("""
+                CREATE TABLE posts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_tg_id INTEGER NOT NULL,
+                    content_type TEXT NOT NULL,
+                    file_id TEXT,
+                    file_ids TEXT,
+                    caption TEXT,
+                    text_content TEXT,
+                    status TEXT DEFAULT 'pending',
+                    channel_id INTEGER,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            self.connection.commit()
+
+    def _migrate_channels_table(self) -> None:
+        """Добавляет require_subscription если отсутствует."""
+        if self._table_exists("channels") and not self._table_has_column("channels", "require_subscription"):
+            self.cursor.execute("ALTER TABLE channels ADD COLUMN require_subscription INTEGER DEFAULT 0")
+            self.connection.commit()
 
     def _ensure_owner(self) -> None:
         if not config.OWNER_ID:
@@ -217,6 +287,27 @@ class Database:
                 "UPDATE users SET muted_until = ? WHERE tg_id = ?",
                 (until.isoformat() if until else None, tg_id),
             )
+
+    def is_muted(self, tg_id: int) -> bool:
+        user = self.get_user_by_telegram_id(tg_id)
+        if not user or not user["muted_until"]:
+            return False
+        try:
+            until = datetime.fromisoformat(user["muted_until"])
+        except ValueError:
+            return False
+        return datetime.now(timezone.utc) < _to_utc(until)
+
+    def get_mute_remaining(self, tg_id: int) -> int | None:
+        user = self.get_user_by_telegram_id(tg_id)
+        if not user or not user["muted_until"]:
+            return None
+        try:
+            until = datetime.fromisoformat(user["muted_until"])
+        except ValueError:
+            return None
+        delta = _to_utc(until) - datetime.now(timezone.utc)
+        return int(delta.total_seconds()) if delta.total_seconds() > 0 else None
 
     def is_admin(self, tg_id: int) -> bool:
         if self.is_owner(tg_id):
