@@ -1,146 +1,85 @@
-"""
-Helper functions for common operations.
-"""
+import logging
+from datetime import datetime
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from sqlalchemy.orm import Session
-from database.models import User, Channel, Subscription, Ban
-from datetime import datetime, timedelta
+from aiogram import Bot
+from aiogram.types import User
 
+from config import config
+from db.database import db
 
-async def get_or_create_user(user_id: int, username: str, first_name: str, last_name: str, db: Session) -> User:
-    """Get or create user in database."""
-    user = db.query(User).filter(User.user_id == user_id).first()
-
-    if not user:
-        user = User(
-            user_id=user_id,
-            username=username,
-            first_name=first_name,
-            last_name=last_name,
-        )
-        db.add(user)
-        db.commit()
-    else:
-        user.last_activity = datetime.utcnow()
-        db.commit()
-
-    return user
+logger = logging.getLogger(__name__)
 
 
-async def check_user_banned(user_id: int, db: Session) -> bool:
-    """Check if user is banned."""
-    ban = db.query(Ban).filter(Ban.user_id == user_id).first()
-    return ban is not None
+def escape_html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-async def is_user_admin(user_id: int, db: Session) -> bool:
-    """Check if user is admin."""
-    user = db.query(User).filter(User.user_id == user_id).first()
-    return user and user.is_admin
+def build_admin_post_text_from_db(post, user_row, channel_row) -> str:
+    """Формат поста для админа:
+    [Пост пользователя — без изменений]
+    ——————————————————
+    Канал: Название канала
+    Ник: Имя
+    Юзернейм: @username
+    ID: 123456789
+    """
+    content = post["text_content"] or post["caption"]
+    body = (content or "").strip() or "—"
+
+    channel_title = channel_row["channel_title"] or f"@{channel_row['channel_username']}"
+    full_name = user_row["full_name"] or "—"
+    username = f"@{user_row['username']}" if user_row["username"] else "нет username"
+    tg_id = user_row["tg_id"]
+
+    return (
+        f"{body}\n"
+        f"——————————————————\n"
+        f"Канал: {escape_html(channel_title)}\n"
+        f"Ник: {escape_html(full_name)}\n"
+        f"Юзернейм: {escape_html(username)}\n"
+        f"ID: <code>{tg_id}</code>"
+    )
 
 
-async def is_user_muted(user_id: int, db: Session) -> bool:
-    """Check if user is muted and if mute is still active."""
-    user = db.query(User).filter(User.user_id == user_id).first()
-
-    if not user or not user.is_muted:
-        return False
-
-    if user.mute_until and user.mute_until < datetime.utcnow():
-        # Mute expired
-        user.is_muted = False
-        user.mute_until = None
-        db.commit()
-        return False
-
-    return True
+BAN_USER_MESSAGE = (
+    "Вы заблокированы в боте и больше не можете отправлять посты."
+)
 
 
-def create_channels_keyboard(channels: list, callback_prefix: str = "channel") -> InlineKeyboardMarkup:
-    """Create inline keyboard with channels."""
-    buttons = []
-    for channel in channels:
-        if not channel.is_archived:
-            buttons.append([
-                InlineKeyboardButton(
-                    text=channel.name,
-                    callback_data=f"{callback_prefix}_{channel.id}"
-                )
-            ])
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+async def notify_user_banned(bot: Bot, tg_id: int) -> None:
+    try:
+        await bot.send_message(tg_id, BAN_USER_MESSAGE)
+    except Exception:
+        logger.warning("Не удалось уведомить пользователя %s о бане", tg_id)
 
 
-def create_confirmation_keyboard(yes_callback: str, no_callback: str) -> InlineKeyboardMarkup:
-    """Create confirmation keyboard."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Да", callback_data=yes_callback),
-            InlineKeyboardButton(text="❌ Нет", callback_data=no_callback),
-        ]
-    ])
+def format_mute_time(seconds: int) -> str:
+    if seconds >= 3600:
+        return f"{seconds // 3600} ч. {(seconds % 3600) // 60} мин."
+    if seconds >= 60:
+        return f"{seconds // 60} мин."
+    return f"{seconds} сек."
 
 
-def create_moderation_keyboard(post_id: int) -> InlineKeyboardMarkup:
-    """Create moderation action keyboard for a post."""
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve_post_{post_id}"),
-            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_post_{post_id}"),
-        ],
-        [
-            InlineKeyboardButton(text="🚫 Забанить", callback_data=f"ban_user_{post_id}"),
-        ],
-    ])
+def format_statistics(stats: dict) -> str:
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
+    return (
+        f"📊 <b>Статистика бота</b>\n"
+        f"<i>Обновлено: {now}</i>\n\n"
+        f"👥 Пользователей: <b>{stats['all_users']}</b>\n"
+        f"📨 Постов: <b>{stats['all_posts']}</b>\n"
+        f"📢 Каналов: <b>{stats['channels_count']}</b>\n\n"
+        f"⏳ На модерации: <b>{stats['pending']}</b>\n"
+        f"✅ Опубликовано: <b>{stats['published']}</b>\n"
+        f"❌ Отклонено: <b>{stats['rejected']}</b>\n\n"
+        f"🚫 В бане: <b>{stats['banned']}</b>\n"
+        f"👮 Админов: <b>{stats['admins']}</b>"
+    )
 
 
-def create_admin_panel_keyboard() -> InlineKeyboardMarkup:
-    """Create admin panel main keyboard."""
-    buttons = [
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_real_stats")],
-        [InlineKeyboardButton(text="📈 Фейк-статистика", callback_data="admin_fake_stats")],
-        [InlineKeyboardButton(text="🚫 Бан-лист", callback_data="admin_banlist")],
-        [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton(text="📢 Рассылка (бот)", callback_data="admin_broadcast_bot")],
-        [InlineKeyboardButton(text="📋 Каналы", callback_data="admin_channels")],
-        [InlineKeyboardButton(text="💧 Водянка", callback_data="admin_watermark")],
-        [InlineKeyboardButton(text="📩 Заявки", callback_data="admin_applications")],
-        [InlineKeyboardButton(text="👥 Администраторы", callback_data="admin_admins")],
-        [InlineKeyboardButton(text="⏰ Автоудаление", callback_data="admin_auto_delete")],
-        [InlineKeyboardButton(text="📮 Рассылка по каналам", callback_data="admin_broadcast_channels")],
-    ]
-
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+async def get_admin_ids() -> list[int]:
+    return db.get_all_admins()
 
 
-def format_user_info(user: User) -> str:
-    """Format user information for display."""
-    status = "🔓 Активный"
-    if user.is_banned:
-        status = "🚫 Заблокирован"
-    elif user.is_muted:
-        status = "🔕 На муте"
-
-    return f"""
-ID: <code>{user.user_id}</code>
-Username: @{user.username or 'N/A'}
-Имя: {user.first_name} {user.last_name or ''}
-Статус: {status}
-Админ: {'✅ Да' if user.is_admin else '❌ Нет'}
-Дата создания: {user.created_at.strftime('%d.%m.%Y %H:%M')}
-"""
-
-
-def format_post_info(post, user: User, channel: Channel) -> str:
-    """Format post information for moderation."""
-    return f"""
-{post.text_content or '[Медиа]'}
-
-{'—' * 20}
-Канал: {channel.name}
-Ник: {user.first_name} {user.last_name or ''}
-Юзернейм: @{user.username or 'N/A'}
-ID: <code>{user.user_id}</code>
-"""
-
+def is_owner(tg_id: int) -> bool:
+    return tg_id == config.OWNER_ID

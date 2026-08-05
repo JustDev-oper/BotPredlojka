@@ -1,51 +1,54 @@
-"""
-Main bot application for aiogram 3.x
-"""
-
 import asyncio
 import logging
+import sys
+from datetime import datetime, timezone, timedelta
+
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
-from config import BOT_TOKEN, DEBUG
-from database.db import init_db
-from handlers.user_handlers import user_router
-from handlers.admin_handlers import admin_router
-from handlers.moderation_handlers import moderation_router
+from config import config
+from handlers import get_routers
+from services.auto_delete import auto_delete_loop
 
-# Configure logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO if not DEBUG else logging.DEBUG
-)
-logger = logging.getLogger(__name__)
+MSK = timezone(timedelta(hours=3))
 
 
-async def main():
-    """Start the bot."""
+class MSKFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=MSK)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Initialize database
-    init_db()
-    logger.info("Database initialized")
 
-    # Initialize bot and dispatcher
-    bot = Bot(token=BOT_TOKEN)
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(MSKFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-    # Include routers
-    dp.include_router(user_router)
-    dp.include_router(admin_router)
-    dp.include_router(moderation_router)
 
+async def main() -> None:
+    if not config.BOT_TOKEN:
+        raise ValueError("BOT_TOKEN не задан в .env")
+    if not config.OWNER_ID:
+        raise ValueError("OWNER_ID не задан в .env")
+
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+    dp = Dispatcher()
+    dp.include_routers(*get_routers())
+
+    logging.info("Бот запущен")
     try:
-        logger.info("Starting bot...")
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        await asyncio.gather(
+            dp.start_polling(bot),
+            auto_delete_loop(bot),
+        )
     finally:
-        await bot.session.close()
+        logging.info("Бот остановлен")
 
 
 if __name__ == "__main__":
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN is not set. Check your .env file.")
     asyncio.run(main())
