@@ -1,24 +1,32 @@
 import os
 
-from dotenv import load_dotenv
+# --- Basic settings ---------------------------------------------------------
 
-load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "PASTE_YOUR_BOT_TOKEN_HERE")
 
+# Владелец бота — единственный, у кого есть доступ к рассылке по каналам,
+# управлению админами и команде /rndadm
+OWNER_ID = 5877007064
 
-def _env(key: str, default: str = "") -> str:
-    return os.getenv(key) or default
+DB_PATH = os.getenv("DB_PATH", "bot.db")
 
+# --- Антиспам ----------------------------------------------------------------
+ANTISPAM_POST_LIMIT = 2        # постов
+ANTISPAM_WINDOW_SECONDS = 3600  # 1 час
 
-class Config:
-    def __init__(self):
-        self.BOT_TOKEN = _env("BOT_TOKEN") or _env("API_TOKEN") or _env("TELEGRAM_BOT_TOKEN")
-        self.OWNER_ID = int(_env("OWNER_ID") or _env("GENERAL_ADMIN_ID", "5877007064"))
+# --- Автоудаление --------------------------------------------------------
+AUTODELETE_OPTIONS = {
+    "2h": 2 * 3600,
+    "24h": 24 * 3600,
+    "48h": 48 * 3600,
+    "72h": 72 * 3600,
+    "none": None,
+}
 
-        self.MAX_MESSAGE_LENGTH = int(_env("MAX_MESSAGE_LENGTH", "4096"))
-
-        # Антиспам: 2 поста → таймер 1 час
-        self.SPAM_POST_THRESHOLD = int(_env("SPAM_POST_THRESHOLD", "2"))
-        self.SPAM_COOLDOWN_SECONDS = int(_env("SPAM_COOLDOWN_SECONDS", "3600"))
-
-
-config = Config()
+AUTODELETE_LABELS = {
+    "2h": "2 часа",
+    "24h": "24 часа",
+    "48h": "48 часов",
+    "72h": "72 часа",
+    "none": "Не удалять",
+}
