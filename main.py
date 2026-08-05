@@ -46,4 +46,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is not set. Check your .env file.")
     asyncio.run(main())

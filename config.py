@@ -13,7 +13,8 @@ load_dotenv()
 # Bot configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", 5877007064))
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+_admin_chat_id = os.getenv("ADMIN_CHAT_ID")
+ADMIN_CHAT_ID = int(_admin_chat_id) if _admin_chat_id else None
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 # Project paths

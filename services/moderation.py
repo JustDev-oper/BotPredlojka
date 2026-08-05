@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from aiogram import Bot
 from database.models import Post, User, Channel, Ban
-from utils.helpers import format_post_info
+from utils.helpers import format_post_info, create_moderation_keyboard
 
 
 class ModerationService:
@@ -20,33 +20,35 @@ class ModerationService:
         else:
             text = f"[Медиа контент]\n\n{'—' * 20}\nКанал: {channel.name}\nНик: {user.first_name} {user.last_name or ''}\nЮзернейм: @{user.username or 'N/A'}\nID: {user.user_id}"
 
-        # Send based on content type
+        keyboard = create_moderation_keyboard(post.id)
+        send_kwargs = {"parse_mode": "HTML", "reply_markup": keyboard}
+
         if post.content_type == "text":
             await bot.send_message(
                 chat_id=admin_chat_id,
                 text=text,
-                parse_mode="HTML"
+                **send_kwargs
             )
         elif post.content_type == "photo":
             await bot.send_photo(
                 chat_id=admin_chat_id,
                 photo=post.media_file_id,
                 caption=text,
-                parse_mode="HTML"
+                **send_kwargs
             )
         elif post.content_type == "video":
             await bot.send_video(
                 chat_id=admin_chat_id,
                 video=post.media_file_id,
                 caption=text,
-                parse_mode="HTML"
+                **send_kwargs
             )
         elif post.content_type == "document":
             await bot.send_document(
                 chat_id=admin_chat_id,
                 document=post.media_file_id,
                 caption=text,
-                parse_mode="HTML"
+                **send_kwargs
             )
 
     @staticmethod

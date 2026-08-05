@@ -25,14 +25,14 @@ async def handle_approve_post(query: CallbackQuery):
         post = db.query(Post).filter(Post.id == post_id).first()
 
         if not post:
-            await query.edit_message_text("❌ Пост не найден.")
+            await query.message.edit_text("❌ Пост не найден.")
             return
 
         # Approve post
         success = await ModerationService.approve_post(post, db, query.bot)
 
         if success:
-            await query.edit_message_text(
+            await query.message.edit_text(
                 "✅ Пост опубликован в канал!"
             )
 
@@ -44,10 +44,10 @@ async def handle_approve_post(query: CallbackQuery):
                         chat_id=user.user_id,
                         text="✅ Ваш пост опубликован!"
                     )
-                except:
+                except Exception:
                     pass
         else:
-            await query.edit_message_text(
+            await query.message.edit_text(
                 "❌ Ошибка при публикации поста."
             )
 
@@ -67,13 +67,13 @@ async def handle_reject_post(query: CallbackQuery):
         post = db.query(Post).filter(Post.id == post_id).first()
 
         if not post:
-            await query.edit_message_text("❌ Пост не найден.")
+            await query.message.edit_text("❌ Пост не найден.")
             return
 
         # Reject post
         await ModerationService.reject_post(post, "Отклонено модератором", db)
 
-        await query.edit_message_text(
+        await query.message.edit_text(
             "❌ Пост отклонён."
         )
 
@@ -85,7 +85,7 @@ async def handle_reject_post(query: CallbackQuery):
                     chat_id=user.user_id,
                     text="❌ Ваш пост отклонён."
                 )
-            except:
+            except Exception:
                 pass
 
     finally:
@@ -103,24 +103,23 @@ async def handle_ban_user(query: CallbackQuery):
     try:
         post = db.query(Post).filter(Post.id == post_id).first()
 
-        if not post:
-            await query.edit_message_text("❌ Пост не найден.")
+        if not post or not post.user:
+            await query.message.edit_text("❌ Пост не найден.")
             return
 
-        # Ban user
         success = await ModerationService.ban_user(
-            post.user_id,
+            post.user.user_id,
             "За нарушение правил",
             query.from_user.id,
             db
         )
 
         if success:
-            await query.edit_message_text(
+            await query.message.edit_text(
                 f"🚫 Пользователь заблокирован."
             )
         else:
-            await query.edit_message_text(
+            await query.message.edit_text(
                 "⚠️ Пользователь уже заблокирован."
             )
 
@@ -156,7 +155,7 @@ async def handle_select_channels(query: CallbackQuery, state: FSMContext):
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
-        await query.edit_message_text(
+        await query.message.edit_text(
             "📢 Выберите канал для публикации:",
             reply_markup=keyboard
         )

@@ -82,6 +82,19 @@ def create_confirmation_keyboard(yes_callback: str, no_callback: str) -> InlineK
     ])
 
 
+def create_moderation_keyboard(post_id: int) -> InlineKeyboardMarkup:
+    """Create moderation action keyboard for a post."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Одобрить", callback_data=f"approve_post_{post_id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_post_{post_id}"),
+        ],
+        [
+            InlineKeyboardButton(text="🚫 Забанить", callback_data=f"ban_user_{post_id}"),
+        ],
+    ])
+
+
 def create_admin_panel_keyboard() -> InlineKeyboardMarkup:
     """Create admin panel main keyboard."""
     buttons = [
