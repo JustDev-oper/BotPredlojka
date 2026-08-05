@@ -279,7 +279,7 @@ async def _send_post_to_admin_topics(bot: Bot, post_id: int, channel_id: int, co
 async def _check_subscription_or_request(
         callback: CallbackQuery, channel_id: int, bot: Bot
 ) -> bool:
-    """Проверяет подписку. Если не подписан — подаёт заявку и показывает ссылку + кнопку «Проверить ✅».
+    """Проверяет подписку. Если не подписан — подаёт заявку и разблокирует отправку постов.
 
     Возвращает True, если пользователь может отправлять пост.
     """
@@ -296,10 +296,10 @@ async def _check_subscription_or_request(
     if subscribed:
         return True
 
-    # Пользователь подаёт заявку — после этого он может отправлять посты.
+    # Не подписан — регистрируем заявку и разблокируем отправку постов
     db.add_channel_request(callback.from_user.id, channel_id)
 
-    # Для приватных каналов пытаемся получить invite link
+    # Определяем ссылку на канал
     channel_username = channel["channel_username"]
     if channel_username.lstrip("-").isdigit() or not channel_username:
         # Приватный канал — генерируем invite link
@@ -316,23 +316,13 @@ async def _check_subscription_or_request(
         channel_link = f"https://t.me/{channel_username}"
         display = f"@{channel_username}"
 
-    if channel_link:
-        await callback.message.answer(
-            f"❌ Вы не подписаны на канал <b>{display}</b>.\n\n"
-            f"Подпишитесь и нажмите «Проверить ✅».\n"
-            f"Ваша заявка зарегистрирована — вы уже можете отправить пост.",
-            parse_mode="HTML",
-            reply_markup=subscription_check_keyboard(channel_link, channel_id),
-        )
-    else:
-        await callback.message.answer(
-            f"❌ Вы не подписаны на канал <b>{display}</b>.\n\n"
-            f"Ваша заявка зарегистрирована — вы уже можете отправить пост.\n"
-            f"После подписки нажмите «Проверить ✅».",
-            parse_mode="HTML",
-            reply_markup=subscription_check_keyboard("", channel_id),
-        )
-    return False
+    link_text = f"\n\n📢 Ссылка на канал: {channel_link}" if channel_link else ""
+    await callback.message.answer(
+        f"✅ Заявка на вступление в канал <b>{display}</b> зарегистрирована.{link_text}\n\n"
+        f"Теперь вы можете отправить пост.",
+        parse_mode="HTML",
+    )
+    return True
 
 
 @router.callback_query(F.data.startswith("check_sub:"))

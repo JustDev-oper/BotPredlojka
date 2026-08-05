@@ -70,18 +70,27 @@ def users_management_keyboard(users: list) -> InlineKeyboardMarkup:
 
 def user_action_keyboard(tg_id: int, is_banned: bool, is_admin: bool, is_muted: bool) -> InlineKeyboardMarkup:
     rows = []
-    if is_banned:
-        rows.append([InlineKeyboardButton(text="🔓 Разбанить", callback_data=f"usr_unban:{tg_id}")])
-    else:
-        rows.append([InlineKeyboardButton(text="🔒 Забанить", callback_data=f"usr_ban:{tg_id}")])
-    if is_muted:
-        rows.append([InlineKeyboardButton(text="🔊 Размутить", callback_data=f"usr_unmute:{tg_id}")])
-    else:
-        rows.append([InlineKeyboardButton(text="🔇 Замутить", callback_data=f"usr_mute:{tg_id}")])
-    if is_admin:
-        rows.append([InlineKeyboardButton(text="➖ Снять админа", callback_data=f"usr_demote:{tg_id}")])
-    else:
-        rows.append([InlineKeyboardButton(text="➕ Назначить админом", callback_data=f"usr_promote:{tg_id}")])
+    # Бан / Разбан — показываем оба, активный подсвечен
+    ban_label = "🚫 Бан ✅" if is_banned else "🚫 Бан"
+    unban_label = "✅ Разбан" if is_banned else "✅ Разбан ⬜"
+    rows.append([
+        InlineKeyboardButton(text=ban_label, callback_data=f"usr_ban:{tg_id}"),
+        InlineKeyboardButton(text=unban_label, callback_data=f"usr_unban:{tg_id}"),
+    ])
+    # Мут / Размут
+    mute_label = "🔇 Мут ✅" if is_muted else "🔇 Мут"
+    unmute_label = "🔊 Размут" if is_muted else "🔊 Размут ⬜"
+    rows.append([
+        InlineKeyboardButton(text=mute_label, callback_data=f"usr_mute:{tg_id}"),
+        InlineKeyboardButton(text=unmute_label, callback_data=f"usr_unmute:{tg_id}"),
+    ])
+    # + адм / - адм
+    add_label = "➕ адм ✅" if is_admin else "➕ адм"
+    del_label = "➖ адм" if is_admin else "➖ адм ⬜"
+    rows.append([
+        InlineKeyboardButton(text=add_label, callback_data=f"usr_promote:{tg_id}"),
+        InlineKeyboardButton(text=del_label, callback_data=f"usr_demote:{tg_id}"),
+    ])
     rows.append([InlineKeyboardButton(text="◀️ К списку", callback_data="ap:users")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
