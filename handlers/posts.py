@@ -279,7 +279,12 @@ async def _send_post_to_admin_topics(bot: Bot, post_id: int, channel_id: int, co
 async def _check_subscription_or_request(
         callback: CallbackQuery, channel_id: int, bot: Bot
 ) -> bool:
-    """Проверяет подписку. Если не подписан — подаёт заявку и разблокирует отправку постов.
+    """Проверяет подписку.
+
+    - Публичный канал: подписка ОБЯЗАТЕЛЬНА. Если не подписан — создаём заявку,
+      показываем ссылку и кнопку «Проверить ✅». Отправка НЕ разрешена до подписки.
+    - Приватный канал: если не подписан — создаём заявку, даём invite-ссылку
+      и разблокируем отправку постов.
 
     Возвращает True, если пользователь может отправлять пост.
     """
@@ -296,13 +301,13 @@ async def _check_subscription_or_request(
     if subscribed:
         return True
 
-    # Не подписан — регистрируем заявку и разблокируем отправку постов
-    db.add_channel_request(callback.from_user.id, channel_id)
-
-    # Определяем ссылку на канал
+    # Определяем тип канала
     channel_username = channel["channel_username"]
-    if channel_username.lstrip("-").isdigit() or not channel_username:
-        # Приватный канал — генерируем invite link
+    is_private = channel_username.lstrip("-").isdigit() or not channel_username
+
+    if is_private:
+        # Приватный канал — заявка, invite-ссылка, отправка разрешена
+        db.add_channel_request(callback.from_user.id, channel_id)
         try:
             invite_link = await bot.create_chat_invite_link(
                 channel["channel_tg_id"],
@@ -312,21 +317,30 @@ async def _check_subscription_or_request(
         except Exception:
             channel_link = None
         display = channel["channel_title"] or f"ID {channel['channel_tg_id']}"
-    else:
-        channel_link = f"https://t.me/{channel_username}"
-        display = f"@{channel_username}"
+        link_text = f"\n\n📢 Ссылка на канал: {channel_link}" if channel_link else ""
+        await callback.message.answer(
+            f"❌ Вы не подписаны на канал <b>{display}</b>.\n"
+            f"✅ Заявка на вступление зарегистрирована.{link_text}\n\n"
+            f"Теперь вы можете отправить пост.",
+            parse_mode="HTML",
+        )
+        return True
 
-    link_text = f"\n\n📢 Ссылка на канал: {channel_link}" if channel_link else ""
+    # Публичный канал — подписка обязательна
+    db.add_channel_request(callback.from_user.id, channel_id)
+    display = f"@{channel_username}"
+    channel_link = f"https://t.me/{channel_username}"
     await callback.message.answer(
-        f"✅ Заявка на вступление в канал <b>{display}</b> зарегистрирована.{link_text}\n\n"
-        f"Теперь вы можете отправить пост.",
+        f"❌ Для отправки поста в канал <b>{display}</b> нужно быть подписанным.\n\n"
+        f"Подпишитесь на канал и нажмите «Проверить ✅».",
         parse_mode="HTML",
+        reply_markup=subscription_check_keyboard(channel_link, channel_id),
     )
-    return True
+    return False
 
 
 @router.callback_query(F.data.startswith("check_sub:"))
-async def check_subscription(callback: CallbackQuery, bot: Bot) -> None:
+async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContext) -> None:
     if db.is_admin(callback.from_user.id):
         await callback.answer("Это для пользователей", show_alert=True)
         return
@@ -348,9 +362,14 @@ async def check_subscription(callback: CallbackQuery, bot: Bot) -> None:
         subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
         if subscribed:
             await callback.answer("✅ Подписка подтверждена!", show_alert=False)
+            await state.clear()
+            await state.update_data(channel_id=channel_id)
+            await state.set_state(UserStates.waiting_post_content)
+            title = channel["channel_title"] or f"@{channel['channel_username']}"
             await callback.message.edit_text(
-                "✅ Подписка подтверждена.\n\n"
-                "Отправьте ваш пост (текст, фото, видео или документ):",
+                f"📢 Канал: <b>{title}</b>\n\n"
+                f"✅ Подписка подтверждена.\n"
+                f"Отправьте ваш пост (текст, фото, видео или документ):",
                 parse_mode="HTML",
             )
             return
@@ -376,11 +395,11 @@ async def select_channel_post(callback: CallbackQuery, state: FSMContext, bot: B
         await callback.answer("Канал недоступен", show_alert=True)
         return
 
-    if channel["require_subscription"]:
-        can_send = await _check_subscription_or_request(callback, channel_id, bot)
-        if not can_send:
-            await callback.answer()
-            return
+    # Всегда проверяем подписку. Если не подписан — создаём заявку, но отправку разрешаем.
+    can_send = await _check_subscription_or_request(callback, channel_id, bot)
+    if not can_send:
+        await callback.answer()
+        return
 
     data = await state.get_data()
     content_data = data.get("pending_content")
