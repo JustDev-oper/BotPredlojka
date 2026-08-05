@@ -64,7 +64,7 @@ def _parse_user_target(text: str) -> int | None:
 
 async def _show_panel(target: Message | CallbackQuery, state: FSMContext) -> None:
     user_id = target.from_user.id
-    if not db.is_admin(user_id):
+    if not is_owner(user_id):
         if isinstance(target, CallbackQuery):
             await target.answer("Нет доступа", show_alert=True)
         else:
@@ -113,7 +113,7 @@ async def cb_open_panel(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:cancel")
 async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
@@ -135,7 +135,7 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:stats")
 async def cb_stats(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -161,7 +161,7 @@ def _format_fake_stats(values: dict[str, int]) -> str:
 
 @router.callback_query(F.data == "ap:fake_stats")
 async def cb_fake_stats(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -176,7 +176,7 @@ async def cb_fake_stats(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("ap:fs_edit:"))
 async def cb_fs_edit(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     key = callback.data.split(":", 2)[2]
@@ -218,7 +218,7 @@ async def process_fs_value(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:fs_show")
 async def cb_fs_show(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -241,7 +241,7 @@ async def cb_fs_show(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:fs_clear")
 async def cb_fs_clear(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     db.clear_all_fake_stats()
@@ -260,7 +260,7 @@ async def cb_fs_clear(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:banlist")
 async def cb_banlist(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -291,7 +291,7 @@ async def cb_banlist(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:users")
 async def cb_users(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -313,7 +313,7 @@ async def cb_users(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ap:user_search")
 async def cb_user_search(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.set_state(AdminPanelStates.waiting_user_search)
@@ -340,7 +340,7 @@ async def process_user_search(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("usr_unban:"))
 async def cb_user_unban(callback: CallbackQuery) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -357,7 +357,7 @@ async def cb_user_unban(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("usr_mute:"))
 async def cb_user_mute(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -391,7 +391,7 @@ async def process_mute_minutes(message: Message, state: FSMContext, bot: Bot) ->
 
 @router.callback_query(F.data.startswith("usr_unmute:"))
 async def cb_user_unmute(callback: CallbackQuery) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -446,7 +446,7 @@ async def cb_user_demote(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "ap:broadcast")
 async def cb_broadcast_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.set_state(AdminPanelStates.waiting_broadcast_content)
@@ -484,7 +484,7 @@ async def process_broadcast_content(message: Message, state: FSMContext, bot: Bo
 
 @router.callback_query(F.data == "bc_cancel")
 async def broadcast_cancel(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -498,7 +498,7 @@ async def broadcast_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "bc_send")
 async def broadcast_send(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
 
@@ -718,7 +718,7 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
 
 @router.callback_query(F.data == "ap:channels")
 async def cb_channels_list(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -815,7 +815,7 @@ async def process_add_channel(message: Message, state: FSMContext, bot: Bot) -> 
 
 @router.callback_query(F.data.startswith("ch_menu:"))
 async def cb_channel_menu(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -954,7 +954,7 @@ async def cb_channel_archive(callback: CallbackQuery, state: FSMContext, bot: Bo
 
 @router.callback_query(F.data == "ap:watermark")
 async def cb_watermark(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -976,7 +976,7 @@ async def cb_watermark(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("wm_select:"))
 async def cb_watermark_select(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1033,7 +1033,7 @@ async def process_watermark_text(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("wm_delete:"))
 async def cb_watermark_delete(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1058,7 +1058,7 @@ async def cb_watermark_delete(callback: CallbackQuery, state: FSMContext) -> Non
 
 @router.callback_query(F.data == "ap:requests")
 async def cb_requests(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -1074,7 +1074,7 @@ async def cb_requests(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("req_toggle:"))
 async def cb_request_toggle(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1101,7 +1101,7 @@ async def cb_request_toggle(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "req_accept")
 async def cb_request_accept(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     data = await state.get_data()
@@ -1120,7 +1120,7 @@ async def cb_request_accept(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "req_accept_confirm")
 async def cb_request_accept_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     data = await state.get_data()
@@ -1140,7 +1140,7 @@ async def cb_request_accept_confirm(callback: CallbackQuery, state: FSMContext) 
 
 @router.callback_query(F.data == "req_accept_all")
 async def cb_request_accept_all(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     channels = db.get_active_channels()
@@ -1250,7 +1250,7 @@ async def cb_del_moderator(callback: CallbackQuery, state: FSMContext, bot: Bot)
 
 @router.callback_query(F.data == "ap:auto_delete")
 async def cb_auto_delete(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     await state.clear()
@@ -1273,7 +1273,7 @@ async def cb_auto_delete(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("ad_view:"))
 async def cb_ad_view(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1298,7 +1298,7 @@ async def cb_ad_view(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("ad_delete_now:"))
 async def cb_ad_delete_now(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1323,7 +1323,7 @@ async def cb_ad_delete_now(callback: CallbackQuery, state: FSMContext, bot: Bot)
 
 @router.callback_query(F.data.startswith("ad_cancel:"))
 async def cb_ad_cancel(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1344,7 +1344,7 @@ async def cb_ad_cancel(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("ad_change:"))
 async def cb_ad_change(callback: CallbackQuery, state: FSMContext) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
@@ -1388,7 +1388,7 @@ async def process_auto_delete_time(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "ad_delete_all")
 async def cb_ad_delete_all(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
-    if not db.is_admin(callback.from_user.id):
+    if not is_owner(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
     ads = db.get_auto_delete_posts()

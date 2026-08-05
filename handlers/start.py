@@ -23,7 +23,7 @@ async def cmd_start(message: Message) -> None:
         message.from_user.full_name,
     )
 
-    if db.is_admin(message.from_user.id):
+    if db.is_owner(message.from_user.id):
         await message.answer(
             WELCOME_FULL + "\n\n🛠 У вас доступ к админ-панели.",
             parse_mode=ParseMode.HTML,
