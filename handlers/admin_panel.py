@@ -1203,15 +1203,14 @@ async def process_new_admin_id(message: Message, state: FSMContext, bot: Bot) ->
     topic_text = f"\n🗂 Создано {topics_created} топиков для каналов." if topics_created else ""
 
     await message.answer(
-        f"👥 Пользователь с ID <code>{tg_id}</code> назначен модератором.",
+        f"👥 Пользователь с ID <code>{tg_id}</code> назначен модератором.{topic_text}",
         parse_mode="HTML",
         reply_markup=_panel_kb_for(message.from_user.id),
     )
     try:
         await bot.send_message(
             tg_id,
-            f"🎉 Вас назначили модератором!{topic_text}",
-            reply_markup=admin_panel_keyboard(is_owner=False),
+            f"Теперь вы можете принимать посты.",
         )
     except Exception:
         pass
