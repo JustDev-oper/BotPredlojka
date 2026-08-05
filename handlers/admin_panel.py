@@ -547,7 +547,7 @@ async def bc_ch_toggle(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("Нет доступа", show_alert=True)
         return
     try:
-        channel_id = int(callback.data.split(":", 2)[2])
+        channel_id = int(callback.data.split(":")[2])
     except (IndexError, ValueError):
         await callback.answer("Ошибка данных", show_alert=True)
         return
