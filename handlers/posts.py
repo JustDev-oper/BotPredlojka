@@ -309,9 +309,11 @@ async def _check_subscription_or_request(
         # Приватный канал — заявка, invite-ссылка, отправка разрешена
         db.add_channel_request(callback.from_user.id, channel_id)
         try:
+            # creates_join_request=True: по ссылке пользователь подаёт ЗАЯВКУ,
+            # а не вступает сразу. Админ канала одобряет её вручную.
             invite_link = await bot.create_chat_invite_link(
                 channel["channel_tg_id"],
-                member_limit=1,
+                creates_join_request=True,
             )
             channel_link = invite_link.invite_link
         except Exception:
