@@ -11,7 +11,10 @@ from database import init_db
 from middlewares import BanCheckMiddleware
 from scheduler import autodelete_loop
 
-from handlers import admin, applications, autodelete, broadcast_bot, broadcast_channels, moderation, user
+from handlers import (
+    admin, applications, autodelete, broadcast_bot, broadcast_channels,
+    join_request, moderation, user,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ async def main() -> None:
     dp.include_router(broadcast_bot.router)
     dp.include_router(broadcast_channels.router)
     dp.include_router(autodelete.router)
+    dp.include_router(join_request.router)
     dp.include_router(moderation.router)
     dp.include_router(user.router)
 

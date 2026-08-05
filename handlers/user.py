@@ -42,13 +42,16 @@ async def choose_channel(call: CallbackQuery, bot: Bot, state: FSMContext):
         return
 
     subscribed = await is_subscribed(bot, channel["chat_id"], call.from_user.id)
+    # Для приватных каналов get_chat_member часто не отражает реального статуса, пока
+    # заявка на вступление не одобрена. Поэтому дополнительно проверяем: если пользователь
+    # уже отправил заявку на вступление в сам канал (Telegram Join Request) — этого достаточно,
+    # чтобы разрешить публикацию, не дожидаясь одобрения администратором канала.
+    requested = await db.has_application(call.from_user.id, channel_id)
 
-    if not subscribed:
-        # Пользователь ещё не подписан -> создаём заявку, показываем ссылку и кнопку проверки.
-        # Важно: заявка уже позволяет отправлять посты, не дожидаясь принятия.
-        await db.create_application(call.from_user.id, channel_id)
+    if not subscribed and not requested:
         await call.message.edit_text(
-            f"Для отправки поста в «{channel['title']}» подпишитесь на канал.",
+            f"Для отправки поста в «{channel['title']}» подпишитесь на канал "
+            f"(для приватного канала — отправьте заявку на вступление по ссылке ниже).",
             reply_markup=check_sub_kb(channel_id, channel["invite_link"]),
         )
         await call.answer()
@@ -71,8 +74,12 @@ async def check_sub(call: CallbackQuery, bot: Bot, state: FSMContext):
         return
 
     subscribed = await is_subscribed(bot, channel["chat_id"], call.from_user.id)
-    if not subscribed:
-        await call.answer("Вы всё ещё не подписаны на канал.", show_alert=True)
+    requested = await db.has_application(call.from_user.id, channel_id)
+    if not subscribed and not requested:
+        await call.answer(
+            "Вы всё ещё не подписаны и не отправили заявку на вступление в канал.",
+            show_alert=True,
+        )
         return
 
     await state.update_data(channel_id=channel_id)

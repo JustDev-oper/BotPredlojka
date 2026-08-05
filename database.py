@@ -259,6 +259,13 @@ async def has_application(user_id: int, channel_id: int) -> bool:
         return (await cur.fetchone()) is not None
 
 
+async def get_channel_by_chat_id(chat_id: int) -> Optional[aiosqlite.Row]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM channels WHERE chat_id=?", (chat_id,))
+        return await cur.fetchone()
+
+
 async def pending_counts_by_channel() -> dict[int, int]:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
