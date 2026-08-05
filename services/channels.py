@@ -17,18 +17,34 @@ BOT_ADMIN_STATUSES = {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR}
 
 
 async def is_user_subscribed(bot: Bot, user_id: int, channel_tg_id: int) -> bool:
-    """Check if user is subscribed to the channel."""
+    """Check if user is subscribed to the channel.
+
+    Only MEMBER status counts as subscribed.
+    LEFT/KICKED/RESTRICTED/ADMINISTRATOR/CREATOR are not subscribers.
+    """
     try:
         member = await bot.get_chat_member(channel_tg_id, user_id)
-        status = member.status
-        logger.debug("Subscription check: user=%s channel=%s status=%s", user_id, channel_tg_id, status)
-        return status not in (
-            ChatMemberStatus.LEFT,
-            ChatMemberStatus.KICKED,
-        )
+        is_sub = member.status == ChatMemberStatus.MEMBER
+        logger.debug("Subscription: user=%s channel=%s status=%s -> %s",
+                     user_id, channel_tg_id, member.status, is_sub)
+        return is_sub
     except Exception as e:
         logger.warning("Subscription check failed: user=%s channel=%s error=%s", user_id, channel_tg_id, e)
         return False
+
+
+async def check_bot_permissions(bot: Bot, channel_tg_id: int) -> tuple[bool, str]:
+    """Check if bot has getChatMember permission in the channel.
+
+    Returns (ok, message).
+    """
+    try:
+        bot_member = await bot.get_chat_member(channel_tg_id, bot.id)
+        if bot_member.status not in BOT_ADMIN_STATUSES:
+            return False, "Бот не является администратором канала"
+        return True, "OK"
+    except Exception as e:
+        return False, f"Не удалось проверить права бота: {e}"
 
 
 async def verify_bot_in_channel(

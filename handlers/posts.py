@@ -12,7 +12,7 @@ from keyboards.inline import (
     moderation_keyboard,
     subscription_check_keyboard,
 )
-from services.channels import is_user_subscribed
+from services.channels import is_user_subscribed, check_bot_permissions
 from states.admin import UserStates
 from utils.antispam import check_antispam
 from utils.helpers import build_admin_post_text_from_db
@@ -294,16 +294,47 @@ async def _check_subscription_or_request(
         return False
 
     tg_chat_id = channel["channel_tg_id"]
+    channel_username = channel["channel_username"]
+    is_private = channel_username and channel_username.lstrip("-").isdigit()
+
+    # Определяем приватный канал по формату tg_chat_id (отрицательное число)
+    is_private_id = isinstance(tg_chat_id, int) and tg_chat_id < 0
+    if is_private_id:
+        is_private = True
+
+    # Для приватных каналов проверяем, что tg_chat_id корректен
+    if is_private:
+        if not tg_chat_id or not isinstance(tg_chat_id, int) or tg_chat_id <= 0:
+            # Нет корректного ID — не можем проверить, показываем информацию о канале
+            display = channel["channel_title"] or channel_username or f"ID {tg_chat_id}"
+            await callback.message.answer(
+                f"⚠️ Канал <b>{display}</b> не имеет корректного ID для проверки подписки.\n\n"
+                f"Обратитесь к администратору.",
+                parse_mode="HTML",
+            )
+            return False
+
     subscribed = False
-    if tg_chat_id:
+    if tg_chat_id and isinstance(tg_chat_id, int):
+        # Сначала проверяем права бота в канале
+        bot_ok, bot_msg = await check_bot_permissions(bot, tg_chat_id)
+        if not bot_ok:
+            logger.warning("Bot permissions check failed for channel %s: %s", tg_chat_id, bot_msg)
+            # Бот не может проверить подписку — показываем invite-ссылку для приватных каналов
+            if is_private:
+                display = channel["channel_title"] or f"ID {tg_chat_id}"
+                await callback.message.answer(
+                    f"⚠️ Бот не может проверить подписку в канале <b>{display}</b>.\n\n"
+                    f"Обратитесь к администратору.",
+                    parse_mode="HTML",
+                )
+                return False
+            return False
+
         subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
 
     if subscribed:
         return True
-
-    # Определяем тип канала
-    channel_username = channel["channel_username"]
-    is_private = channel_username.lstrip("-").isdigit() or not channel_username
 
     if is_private:
         # Приватный канал — доступ открывается после подачи заявки в Telegram
@@ -316,13 +347,15 @@ async def _check_subscription_or_request(
             # creates_join_request=True: по ссылке пользователь подаёт ЗАЯВКУ,
             # а не вступает сразу. Админ канала одобряет её вручную.
             invite_link = await bot.create_chat_invite_link(
-                channel["channel_tg_id"],
+                tg_chat_id,
                 creates_join_request=True,
+                expire_in=3600,  # ссылку используем 1 час
             )
             channel_link = invite_link.invite_link
         except Exception:
+            logger.warning("Failed to create invite link for channel %s", tg_chat_id)
             channel_link = None
-        display = channel["channel_title"] or f"ID {channel['channel_tg_id']}"
+        display = channel["channel_title"] or f"ID {tg_chat_id}"
 
         if channel_link:
             await callback.message.answer(
@@ -373,13 +406,40 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContex
         return
 
     tg_chat_id = channel["channel_tg_id"]
-    subscribed = False
-    if tg_chat_id:
-        subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
 
-    # Доступ открыт, если пользователь подписан ИЛИ подал заявку на вступление
+    # Проверка через has_request (заявка уже подана)
     has_request = db.has_channel_request(callback.from_user.id, channel_id)
-    if subscribed or has_request:
+
+    if has_request:
+        # Пользователь подал заявку — доступ открываем
+        await callback.answer("✅ Доступ открыт!", show_alert=False)
+        await state.clear()
+        await state.update_data(channel_id=channel_id)
+        await state.set_state(UserStates.waiting_post_content)
+        title = channel["channel_title"] or f"@{channel['channel_username']}"
+        await callback.message.edit_text(
+            f"📢 Канал: <b>{title}</b>\n\n"
+            f"✅ Заявка принята.\n"
+            f"Отправьте ваш пост (текст, фото, видео или документ):",
+            parse_mode="HTML",
+        )
+        return
+
+    # Проверяем подписку через Telegram API
+    subscribed = False
+    if tg_chat_id and isinstance(tg_chat_id, int):
+        # Сначала проверяем права бота в канале
+        bot_ok, bot_msg = await check_bot_permissions(bot, tg_chat_id)
+        if bot_ok:
+            subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
+        else:
+            logger.warning("Bot permissions check failed in check_sub for channel %s: %s", tg_chat_id, bot_msg)
+
+    if subscribed:
+        # Создаём запись о заявке для публичных каналов
+        if not channel["channel_username"].lstrip("-").isdigit():
+            db.add_channel_request(callback.from_user.id, channel_id)
+
         await callback.answer("✅ Доступ открыт!", show_alert=False)
         await state.clear()
         await state.update_data(channel_id=channel_id)
