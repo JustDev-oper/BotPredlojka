@@ -16,15 +16,30 @@ logger = logging.getLogger(__name__)
 BOT_ADMIN_STATUSES = {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR}
 
 
-def is_channel_private(channel: dict) -> bool:
+def _to_dict(data) -> dict:
+    """Конвертирует sqlite3.Row или dict в dict."""
+    if isinstance(data, dict):
+        return data
+    # sqlite3.Row поддерживает unpacking как dict
+    return dict(data)
+
+def _get_channel_field(channel, key, default=None):
+    """Безопасно получает поле из dict или sqlite3.Row."""
+    if hasattr(channel, 'get'):
+        return channel.get(key, default)
+    # sqlite3.Row: keys() — метод
+    return channel[key] if key in channel.keys() else default
+
+
+def is_channel_private(channel) -> bool:
     """Определяет, является ли канал приватным.
 
     Приватный канал:
     - channel_username — числовой ID (например "-1002209784231")
     - channel_tg_id — отрицательное число
     """
-    channel_username = channel.get("channel_username", "")
-    channel_tg_id = channel.get("channel_tg_id")
+    channel_username = _get_channel_field(channel, "channel_username", "")
+    channel_tg_id = _get_channel_field(channel, "channel_tg_id")
 
     # По username: если это число (с -), значит приватный
     if channel_username and channel_username.lstrip("-").isdigit():
@@ -36,14 +51,14 @@ def is_channel_private(channel: dict) -> bool:
     return False
 
 
-def get_channel_chat_id(channel: dict) -> int | None:
+def get_channel_chat_id(channel) -> int | None:
     """Возвращает chat_id канала для API-вызовов.
 
     Для приватных каналов возвращает numeric ID (tg_chat_id или username).
     Для публичных — None (они обрабатываются по username).
     """
-    channel_tg_id = channel.get("channel_tg_id")
-    channel_username = channel.get("channel_username")
+    channel_tg_id = _get_channel_field(channel, "channel_tg_id")
+    channel_username = _get_channel_field(channel, "channel_username")
 
     # Приоритет: channel_tg_id
     if channel_tg_id and isinstance(channel_tg_id, int):
