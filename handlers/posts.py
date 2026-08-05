@@ -295,16 +295,23 @@ async def _check_subscription_or_request(
 
     tg_chat_id = channel["channel_tg_id"]
     channel_username = channel["channel_username"]
+
+    # Определяем приватный канал: по username (числовой ID) или по tg_chat_id
     is_private = channel_username and channel_username.lstrip("-").isdigit()
 
-    # Определяем приватный канал по формату tg_chat_id (отрицательное число)
-    is_private_id = isinstance(tg_chat_id, int) and tg_chat_id < 0
-    if is_private_id:
+    # Формат приватного канала Telegram: отрицательное число (например -1002209784231)
+    if isinstance(tg_chat_id, int) and tg_chat_id < 0:
         is_private = True
+        # Если tg_chat_id пустой, но username — число, используем его
+        if not tg_chat_id:
+            try:
+                tg_chat_id = int(channel_username)
+            except ValueError:
+                tg_chat_id = None
 
     # Для приватных каналов проверяем, что tg_chat_id корректен
     if is_private:
-        if not tg_chat_id or not isinstance(tg_chat_id, int) or tg_chat_id <= 0:
+        if not tg_chat_id or not isinstance(tg_chat_id, int) or tg_chat_id > 0:
             # Нет корректного ID — не можем проверить, показываем информацию о канале
             display = channel["channel_title"] or channel_username or f"ID {tg_chat_id}"
             await callback.message.answer(
@@ -406,6 +413,13 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContex
         return
 
     tg_chat_id = channel["channel_tg_id"]
+
+    # Fallback: если tg_chat_id пустой, но channel_username — числовой ID приватного канала
+    if not tg_chat_id and channel["channel_username"]:
+        try:
+            tg_chat_id = int(channel["channel_username"])
+        except ValueError:
+            pass
 
     # Проверка через has_request (заявка уже подана)
     has_request = db.has_channel_request(callback.from_user.id, channel_id)
