@@ -507,6 +507,10 @@ class Database:
         self.cursor.execute("SELECT * FROM channels WHERE id = ?", (channel_id,))
         return self.cursor.fetchone()
 
+    def get_channel_by_tg_id(self, channel_tg_id: int) -> sqlite3.Row | None:
+        self.cursor.execute("SELECT * FROM channels WHERE channel_tg_id = ?", (channel_tg_id,))
+        return self.cursor.fetchone()
+
     def get_active_channels(self) -> list[sqlite3.Row]:
         self.cursor.execute("SELECT * FROM channels WHERE is_active = 1 ORDER BY id")
         return self.cursor.fetchall()
@@ -608,6 +612,14 @@ class Database:
         )
         row = self.cursor.fetchone()
         return bool(row and row["status"] == "pending")
+
+    def has_channel_request(self, user_tg_id: int, channel_id: int) -> bool:
+        """Подавал ли пользователь заявку в канал (любой статус)."""
+        self.cursor.execute(
+            "SELECT 1 FROM channel_requests WHERE user_tg_id = ? AND channel_id = ?",
+            (user_tg_id, channel_id),
+        )
+        return self.cursor.fetchone() is not None
 
     def get_pending_requests_for_channel(self, channel_id: int) -> list[sqlite3.Row]:
         self.cursor.execute(

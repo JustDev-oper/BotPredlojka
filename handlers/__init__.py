@@ -1,6 +1,6 @@
 from aiogram import Router
 
-from . import admin_panel, callbacks, posts, replies, start
+from . import admin_panel, callbacks, join_requests, posts, replies, start
 
 
 def get_routers() -> list[Router]:
@@ -10,4 +10,5 @@ def get_routers() -> list[Router]:
         callbacks.router,
         replies.router,
         posts.router,
+        join_requests.router,
     ]

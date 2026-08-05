@@ -306,8 +306,12 @@ async def _check_subscription_or_request(
     is_private = channel_username.lstrip("-").isdigit() or not channel_username
 
     if is_private:
-        # Приватный канал — заявка, invite-ссылка, отправка разрешена
-        db.add_channel_request(callback.from_user.id, channel_id)
+        # Приватный канал — доступ открывается после подачи заявки в Telegram
+        if db.has_channel_request(callback.from_user.id, channel_id):
+            # Заявка уже подана — доступ открыт
+            return True
+
+        # Показываем invite-ссылку, чтобы пользователь подал заявку на вступление
         try:
             # creates_join_request=True: по ссылке пользователь подаёт ЗАЯВКУ,
             # а не вступает сразу. Админ канала одобряет её вручную.
@@ -319,14 +323,23 @@ async def _check_subscription_or_request(
         except Exception:
             channel_link = None
         display = channel["channel_title"] or f"ID {channel['channel_tg_id']}"
-        link_text = f"\n\n📢 Ссылка на канал: {channel_link}" if channel_link else ""
-        await callback.message.answer(
-            f"❌ Вы не подписаны на канал <b>{display}</b>.\n"
-            f"✅ Заявка на вступление зарегистрирована.{link_text}\n\n"
-            f"Теперь вы можете отправить пост.",
-            parse_mode="HTML",
-        )
-        return True
+
+        if channel_link:
+            await callback.message.answer(
+                f"❌ Для отправки поста в канал <b>{display}</b> нужно подать заявку на вступление.\n\n"
+                f"📢 Перейдите по ссылке и нажмите «Отправить запрос»:\n{channel_link}\n\n"
+                f"После подачи заявки нажмите «Проверить ✅».",
+                parse_mode="HTML",
+                reply_markup=subscription_check_keyboard(channel_link, channel_id),
+            )
+        else:
+            await callback.message.answer(
+                f"❌ Для отправки поста в канал <b>{display}</b> нужно подать заявку на вступление.\n\n"
+                f"После подачи заявки нажмите «Проверить ✅».",
+                parse_mode="HTML",
+                reply_markup=subscription_check_keyboard("", channel_id),
+            )
+        return False
 
     # Публичный канал — подписка обязательна
     db.add_channel_request(callback.from_user.id, channel_id)
@@ -360,21 +373,25 @@ async def check_subscription(callback: CallbackQuery, bot: Bot, state: FSMContex
         return
 
     tg_chat_id = channel["channel_tg_id"]
+    subscribed = False
     if tg_chat_id:
         subscribed = await is_user_subscribed(bot, callback.from_user.id, tg_chat_id)
-        if subscribed:
-            await callback.answer("✅ Подписка подтверждена!", show_alert=False)
-            await state.clear()
-            await state.update_data(channel_id=channel_id)
-            await state.set_state(UserStates.waiting_post_content)
-            title = channel["channel_title"] or f"@{channel['channel_username']}"
-            await callback.message.edit_text(
-                f"📢 Канал: <b>{title}</b>\n\n"
-                f"✅ Подписка подтверждена.\n"
-                f"Отправьте ваш пост (текст, фото, видео или документ):",
-                parse_mode="HTML",
-            )
-            return
+
+    # Доступ открыт, если пользователь подписан ИЛИ подал заявку на вступление
+    has_request = db.has_channel_request(callback.from_user.id, channel_id)
+    if subscribed or has_request:
+        await callback.answer("✅ Доступ открыт!", show_alert=False)
+        await state.clear()
+        await state.update_data(channel_id=channel_id)
+        await state.set_state(UserStates.waiting_post_content)
+        title = channel["channel_title"] or f"@{channel['channel_username']}"
+        await callback.message.edit_text(
+            f"📢 Канал: <b>{title}</b>\n\n"
+            f"✅ Подписка подтверждена.\n"
+            f"Отправьте ваш пост (текст, фото, видео или документ):",
+            parse_mode="HTML",
+        )
+        return
 
     await callback.answer("Вы всё ещё не подписаны на канал", show_alert=True)
 
