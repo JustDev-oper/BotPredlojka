@@ -85,6 +85,80 @@ async def init_db() -> None:
         )
         await db.commit()
 
+    # На случай, если каналы уже были задублированы раньше (до этой правки) —
+    # схлопываем дубликаты по chat_id и только потом ставим уникальный индекс,
+    # чтобы его создание не падало на старых данных.
+    await _dedupe_channels()
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_channels_chat_id ON channels(chat_id)"
+        )
+        await db.commit()
+
+
+async def _dedupe_channels() -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT chat_id, COUNT(*) AS cnt FROM channels GROUP BY chat_id HAVING cnt > 1"
+        )
+        dupes = await cur.fetchall()
+
+        for row in dupes:
+            chat_id = row["chat_id"]
+            cur = await db.execute(
+                "SELECT * FROM channels WHERE chat_id=? ORDER BY channel_id ASC", (chat_id,)
+            )
+            rows = await cur.fetchall()
+            canonical = rows[0]
+            extra_ids = [r["channel_id"] for r in rows[1:]]
+
+            # Предпочитаем непустые title/invite_link/water_text из дублей, если у канонической записи их нет
+            title = canonical["title"]
+            invite_link = canonical["invite_link"]
+            water_text = canonical["water_text"]
+            archived = canonical["archived"]
+            for r in rows[1:]:
+                if not invite_link and r["invite_link"]:
+                    invite_link = r["invite_link"]
+                if not water_text and r["water_text"]:
+                    water_text = r["water_text"]
+                if not r["archived"]:
+                    archived = 0
+
+            await db.execute(
+                "UPDATE channels SET title=?, invite_link=?, water_text=?, archived=? WHERE channel_id=?",
+                (title, invite_link, water_text, archived, canonical["channel_id"]),
+            )
+
+            if extra_ids:
+                placeholders = ",".join("?" * len(extra_ids))
+                # applications имеет UNIQUE(user_id, channel_id) — используем OR IGNORE,
+                # чтобы не упасть, если у пользователя уже есть заявка на канонический канал
+                await db.execute(
+                    f"UPDATE OR IGNORE applications SET channel_id=? WHERE channel_id IN ({placeholders})",
+                    (canonical["channel_id"], *extra_ids),
+                )
+                # то, что не смогли перенести из-за конфликта уникальности, просто удаляем
+                await db.execute(
+                    f"DELETE FROM applications WHERE channel_id IN ({placeholders})",
+                    extra_ids,
+                )
+                await db.execute(
+                    f"UPDATE posts SET channel_id=? WHERE channel_id IN ({placeholders})",
+                    (canonical["channel_id"], *extra_ids),
+                )
+                await db.execute(
+                    f"UPDATE scheduled_deletions SET channel_id=? WHERE channel_id IN ({placeholders})",
+                    (canonical["channel_id"], *extra_ids),
+                )
+                await db.execute(
+                    f"DELETE FROM channels WHERE channel_id IN ({placeholders})", extra_ids
+                )
+
+        await db.commit()
+
 
 def _now() -> int:
     return int(time.time())
@@ -191,14 +265,35 @@ async def list_admins() -> list[aiosqlite.Row]:
 
 # --- channels -----------------------------------------------------------------
 
-async def add_channel(chat_id: int, title: str, invite_link: Optional[str]) -> int:
+async def add_channel(chat_id: int, title: str, invite_link: Optional[str]) -> tuple[int, bool]:
+    """
+    Добавляет канал, если его ещё нет в базе (по chat_id).
+    Если канал уже существует — обновляет title/invite_link (если пришли новые)
+    и снимает архивную отметку, но НЕ создаёт дубликат.
+
+    Возвращает (channel_id, created), где created=True, если запись новая.
+    """
     async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM channels WHERE chat_id=?", (chat_id,))
+        existing = await cur.fetchone()
+
+        if existing:
+            new_title = title or existing["title"]
+            new_link = invite_link or existing["invite_link"]
+            await db.execute(
+                "UPDATE channels SET title=?, invite_link=?, archived=0 WHERE channel_id=?",
+                (new_title, new_link, existing["channel_id"]),
+            )
+            await db.commit()
+            return existing["channel_id"], False
+
         cur = await db.execute(
             "INSERT INTO channels (chat_id, title, invite_link) VALUES (?, ?, ?)",
             (chat_id, title, invite_link),
         )
         await db.commit()
-        return cur.lastrowid
+        return cur.lastrowid, True
 
 
 async def rename_channel(channel_id: int, new_title: str) -> None:

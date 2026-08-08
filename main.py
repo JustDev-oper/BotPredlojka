@@ -13,7 +13,7 @@ from scheduler import autodelete_loop
 
 from handlers import (
     admin, applications, autodelete, broadcast_bot, broadcast_channels,
-    join_request, moderation, user,
+    channel_membership, join_request, moderation, user,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -37,6 +37,7 @@ async def main() -> None:
     dp.include_router(broadcast_channels.router)
     dp.include_router(autodelete.router)
     dp.include_router(join_request.router)
+    dp.include_router(channel_membership.router)
     dp.include_router(moderation.router)
     dp.include_router(user.router)
 

@@ -321,9 +321,15 @@ async def chan_add_finish(message: Message, bot: Bot, state: FSMContext):
     except Exception:
         pass
 
-    await db.add_channel(chat_id, title or str(chat_id), invite_link)
+    channel_id, created = await db.add_channel(chat_id, title or str(chat_id), invite_link)
     await state.clear()
-    await message.answer(f"Канал «{title}» добавлен.", reply_markup=channels_menu_kb())
+    if created:
+        await message.answer(f"Канал «{title}» добавлен.", reply_markup=channels_menu_kb())
+    else:
+        await message.answer(
+            f"Канал «{title}» уже был добавлен ранее — обновил данные, повторно добавлять не стал.",
+            reply_markup=channels_menu_kb(),
+        )
 
 
 @router.callback_query(F.data == "chan:rename")
