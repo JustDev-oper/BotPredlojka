@@ -9,7 +9,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN
 from database import init_db
 from middlewares import BanCheckMiddleware
-from scheduler import autodelete_loop
+from scheduler import autodelete_loop, scheduled_broadcast_loop
 
 from handlers import (
     admin, applications, autodelete, broadcast_bot, broadcast_channels,
@@ -42,6 +42,7 @@ async def main() -> None:
     dp.include_router(user.router)
 
     asyncio.create_task(autodelete_loop(bot))
+    asyncio.create_task(scheduled_broadcast_loop(bot))
 
     log.info("Бот запущен")
     await dp.start_polling(bot)

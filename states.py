@@ -25,6 +25,8 @@ class WaterSetup(StatesGroup):
 
 class BroadcastBot(StatesGroup):
     waiting_message = State()
+    waiting_confirm = State()       # показали превью, ждём подтверждение и выбор "сейчас"/"по времени"
+    waiting_datetime = State()      # ждём дату и время отправки
 
 
 class BroadcastChannels(StatesGroup):

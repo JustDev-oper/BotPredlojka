@@ -154,6 +154,25 @@ def autodelete_choice_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+# --- broadcast to bot users (with preview + scheduling) ------------------------
+
+def bcast_bot_confirm_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="✅ Подтвердить", callback_data="bb:confirm:yes")
+    b.button(text="❌ Отмена", callback_data="bb:confirm:no")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def bcast_bot_time_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="🚀 Отправить сейчас", callback_data="bb:now")
+    b.button(text="🕒 Запланировать по времени", callback_data="bb:schedule")
+    b.button(text="❌ Отмена", callback_data="bb:cancel")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def confirm_kb(prefix: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="Да", callback_data=f"{prefix}:yes")

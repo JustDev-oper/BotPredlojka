@@ -73,6 +73,16 @@ CREATE TABLE IF NOT EXISTS scheduled_deletions (
     deleted      INTEGER NOT NULL DEFAULT 0,
     created_at   INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scheduled_broadcasts (
+    sched_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type  TEXT NOT NULL,
+    content_data  TEXT NOT NULL,   -- JSON: {text, caption, file_id, ...}
+    send_at       INTEGER NOT NULL,
+    sent          INTEGER NOT NULL DEFAULT 0,
+    created_by    INTEGER,
+    created_at    INTEGER NOT NULL
+);
 """
 
 
@@ -539,3 +549,48 @@ async def get_scheduled(sched_id: int) -> Optional[aiosqlite.Row]:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM scheduled_deletions WHERE sched_id=?", (sched_id,))
         return await cur.fetchone()
+
+
+# --- scheduled broadcasts (рассылка всем пользователям бота в заданное время) --
+
+async def create_scheduled_broadcast(
+    content_type: str, content_data: dict, send_at: int, created_by: Optional[int]
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            """INSERT INTO scheduled_broadcasts (content_type, content_data, send_at, created_by, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (content_type, json.dumps(content_data), send_at, created_by, _now()),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def due_broadcasts() -> list[aiosqlite.Row]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM scheduled_broadcasts WHERE sent=0 AND send_at<=?", (_now(),)
+        )
+        return await cur.fetchall()
+
+
+async def mark_broadcast_sent(sched_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE scheduled_broadcasts SET sent=1 WHERE sched_id=?", (sched_id,))
+        await db.commit()
+
+
+async def list_pending_broadcasts() -> list[aiosqlite.Row]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM scheduled_broadcasts WHERE sent=0 ORDER BY send_at"
+        )
+        return await cur.fetchall()
+
+
+async def cancel_scheduled_broadcast(sched_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM scheduled_broadcasts WHERE sched_id=?", (sched_id,))
+        await db.commit()
