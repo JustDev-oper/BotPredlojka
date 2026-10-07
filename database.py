@@ -216,6 +216,9 @@ async def all_user_ids() -> list[int]:
 
 
 async def set_ban(user_id: int, banned: bool) -> None:
+    # The owner must never be blocked, even if a caller forgets to check first.
+    if banned and user_id == OWNER_ID:
+        return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("UPDATE users SET is_banned=? WHERE user_id=?", (int(banned), user_id))
         await db.commit()

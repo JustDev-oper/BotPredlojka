@@ -216,6 +216,10 @@ async def do_ban(message: Message, bot: Bot, state: FSMContext):
     if uid is None:
         await message.answer("Не удалось распознать пользователя.")
         return
+    if await db.is_owner(uid):
+        await state.clear()
+        await message.answer("Главного администратора заблокировать нельзя.", reply_markup=users_menu_kb())
+        return
     await db.set_ban(uid, True)
     await state.clear()
     await message.answer(f"Пользователь {uid} забанен.", reply_markup=users_menu_kb())
