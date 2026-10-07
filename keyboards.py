@@ -51,13 +51,16 @@ def back_to_panel_kb() -> InlineKeyboardMarkup:
 
 # --- moderation ---------------------------------------------------------------
 
-def moderation_kb(post_id: int) -> InlineKeyboardMarkup:
+def moderation_kb(post_id: int, is_owner: bool = True) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.button(text="✅ Опубликовать", callback_data=f"mod:pub:{post_id}")
     b.button(text="❌ Отклонить", callback_data=f"mod:rej:{post_id}")
-    b.button(text="🚫 Бан", callback_data=f"mod:ban:{post_id}")
-    b.button(text="📩 ВЫБРАТЬ КАНАЛЫ", callback_data=f"mod:pick:{post_id}")
-    b.adjust(2, 1, 1)
+    if is_owner:
+        b.button(text="🚫 Бан", callback_data=f"mod:ban:{post_id}")
+        b.button(text="📩 ВЫБРАТЬ КАНАЛЫ", callback_data=f"mod:pick:{post_id}")
+        b.adjust(2, 1, 1)
+    else:
+        b.adjust(2)
     return b.as_markup()
 
 

@@ -4,8 +4,12 @@ from aiogram.types import CallbackQuery
 
 import database as db
 from keyboards import applications_kb
+from middlewares import OwnerControlsMiddleware
 
 router = Router(name="applications")
+_controls_guard = OwnerControlsMiddleware()
+router.callback_query.middleware(_controls_guard)
+router.message.middleware(_controls_guard)
 
 # selected channel_ids per admin user_id, in-memory (только для текущей сессии выбора)
 _selected: dict[int, set] = {}

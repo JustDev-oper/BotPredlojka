@@ -7,8 +7,12 @@ from aiogram.types import CallbackQuery, Message
 import database as db
 from keyboards import autodel_item_kb, autodel_menu_kb, back_to_panel_kb
 from states import RescheduleDelete
+from middlewares import OwnerControlsMiddleware
 
 router = Router(name="autodelete")
+_controls_guard = OwnerControlsMiddleware()
+router.callback_query.middleware(_controls_guard)
+router.message.middleware(_controls_guard)
 
 
 @router.callback_query(F.data == "adm:autodel")

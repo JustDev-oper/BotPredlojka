@@ -195,6 +195,20 @@ async def get_user(user_id: int) -> Optional[aiosqlite.Row]:
         return await cur.fetchone()
 
 
+async def get_user_by_username(username: str) -> Optional[aiosqlite.Row]:
+    """Find a known bot user by username, ignoring an optional leading @."""
+    username = username.strip().lstrip("@").casefold()
+    if not username:
+        return None
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute(
+            "SELECT * FROM users WHERE username IS NOT NULL AND lower(username)=? LIMIT 1",
+            (username,),
+        )
+        return await cur.fetchone()
+
+
 async def all_user_ids() -> list[int]:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute("SELECT user_id FROM users WHERE is_banned=0")

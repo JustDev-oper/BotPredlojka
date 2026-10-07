@@ -3,9 +3,13 @@ from aiogram.types import CallbackQuery, Message
 
 import database as db
 from keyboards import moderation_kb, pick_channel_kb
+from middlewares import OwnerControlsMiddleware
 from utils import load_content, send_content
 
 router = Router(name="moderation")
+_moderation_guard = OwnerControlsMiddleware(("mod:pub:", "mod:rej:"))
+router.callback_query.middleware(_moderation_guard)
+router.message.middleware(_moderation_guard)
 
 
 def _format_caption(user, channel_title: str) -> str:
@@ -62,7 +66,7 @@ async def notify_admins_new_post(bot: Bot, post_id: int) -> None:
             await bot.edit_message_reply_markup(
                 chat_id=admin["user_id"],
                 message_id=sent.message_id,
-                reply_markup=moderation_kb(post_id),
+                reply_markup=moderation_kb(post_id, bool(admin["is_owner"])),
             )
             # запоминаем только первое админ-сообщение как основное для дальнейших правок карточки
             existing = await db.get_post(post_id)
@@ -74,6 +78,9 @@ async def notify_admins_new_post(bot: Bot, post_id: int) -> None:
 
 @router.callback_query(F.data.startswith("mod:pub:"))
 async def publish_post(call: CallbackQuery, bot: Bot):
+    if not await db.is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
     post_id = int(call.data.split(":")[2])
     post = await db.get_post(post_id)
     if not post or post["status"] != "pending":
@@ -112,6 +119,9 @@ async def publish_post(call: CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data.startswith("mod:rej:"))
 async def reject_post(call: CallbackQuery, bot: Bot):
+    if not await db.is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
     post_id = int(call.data.split(":")[2])
     post = await db.get_post(post_id)
     if not post or post["status"] != "pending":

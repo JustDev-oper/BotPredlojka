@@ -13,8 +13,12 @@ from keyboards import (
 from states import (
     ChannelAdd, ChannelRename, FakeStats, UsersManage, WaterSetup,
 )
+from middlewares import OwnerControlsMiddleware
 
 router = Router(name="admin")
+_controls_guard = OwnerControlsMiddleware(("adm:menu",))
+router.callback_query.middleware(_controls_guard)
+router.message.middleware(_controls_guard)
 
 
 async def _require_admin(obj) -> bool:
@@ -29,6 +33,9 @@ async def cmd_admin(message: Message, state: FSMContext):
     await state.clear()
     if not await db.is_admin(message.from_user.id):
         await message.answer("У вас нет доступа к админ-панели.")
+        return
+    if not await db.is_owner(message.from_user.id):
+        await message.answer("Вы модератор. Используйте кнопки «Опубликовать» и «Отклонить» в карточках постов.")
         return
     await message.answer(
         "Админ-панель:", reply_markup=admin_panel_kb(await db.is_owner(message.from_user.id))
@@ -48,6 +55,10 @@ async def back_to_menu(call: CallbackQuery, state: FSMContext):
     await state.clear()
     if not await db.is_admin(call.from_user.id):
         await call.answer("Нет доступа", show_alert=True)
+        return
+    if not await db.is_owner(call.from_user.id):
+        await call.message.edit_text("Вы модератор. Используйте кнопки в карточках постов.", reply_markup=None)
+        await call.answer()
         return
     await call.message.edit_text(
         "Админ-панель:", reply_markup=admin_panel_kb(await db.is_owner(call.from_user.id))
@@ -185,8 +196,11 @@ async def users_action_prompt(call: CallbackQuery, state: FSMContext):
 async def _resolve_user_id(bot: Bot, raw: str) -> int | None:
     raw = raw.strip()
     if raw.startswith("@"):
+        known_user = await db.get_user_by_username(raw)
+        if known_user:
+            return known_user["user_id"]
         try:
-            chat = await bot.get_chat(raw)
+            chat = await bot.get_chat("@" + raw.lstrip("@"))
             return chat.id
         except Exception:
             return None

@@ -9,8 +9,12 @@ import database as db
 from keyboards import back_to_panel_kb, bcast_bot_confirm_kb, bcast_bot_time_kb
 from states import BroadcastBot
 from utils import extract_content, send_content
+from middlewares import OwnerControlsMiddleware
 
 router = Router(name="broadcast_bot")
+_controls_guard = OwnerControlsMiddleware()
+router.callback_query.middleware(_controls_guard)
+router.message.middleware(_controls_guard)
 
 
 @router.callback_query(F.data == "adm:bcastbot")

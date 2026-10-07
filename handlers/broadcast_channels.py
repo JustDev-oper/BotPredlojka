@@ -11,8 +11,12 @@ from keyboards import (
 )
 from states import BroadcastChannels
 from utils import extract_content, send_content
+from middlewares import OwnerControlsMiddleware
 
 router = Router(name="broadcast_channels")
+_controls_guard = OwnerControlsMiddleware()
+router.callback_query.middleware(_controls_guard)
+router.message.middleware(_controls_guard)
 
 _selected: dict[int, set] = {}
 
