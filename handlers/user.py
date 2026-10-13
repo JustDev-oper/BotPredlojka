@@ -51,7 +51,7 @@ async def choose_channel(call: CallbackQuery, bot: Bot, state: FSMContext):
     if not subscribed and not requested:
         await call.message.edit_text(
             f"Для отправки поста в «{channel['title']}» подпишитесь на канал "
-            f"(для приватного канала — отправьте заявку на вступление по ссылке ниже).",
+            f"(для приватн��го канала — отправьте заявку на вступление по ссылке ниже).",
             reply_markup=check_sub_kb(channel_id, channel["invite_link"]),
         )
         await call.answer()
@@ -112,7 +112,7 @@ async def receive_post(message: Message, bot: Bot, state: FSMContext):
     recent = await db.recent_post_count(message.from_user.id, ANTISPAM_WINDOW_SECONDS)
     if recent >= ANTISPAM_POST_LIMIT:
         await message.answer(
-            "⛔️ Вы превысили лимит постов (2 в час). Попробуйте позже."
+            "⛔️ Вы превысили лимит постов (2 в ч��с). Попробуйте позже."
         )
         return
 
@@ -122,6 +122,10 @@ async def receive_post(message: Message, bot: Bot, state: FSMContext):
 
     await message.answer("Ваш пост отправлен на модерацию.")
     await state.clear()
+
+    # ВАЖНО: реклама идёт только автору поста в его ЛС, а не в чат модерации.
+    from handlers.ads import send_ad_to_user  # local import avoids circular import
+    await send_ad_to_user(bot, message.from_user.id)
 
     # уведомляем всех админов/модераторов
     from handlers.moderation import notify_admins_new_post  # local import avoids circular import

@@ -1,3 +1,4 @@
+import random
 import json
 import time
 from typing import Any, Optional
@@ -54,14 +55,24 @@ CREATE TABLE IF NOT EXISTS posts (
     published_message_id INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS ad_posts (
+    ad_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id          INTEGER NOT NULL,
+    content_type     TEXT NOT NULL,
+    content_data     TEXT NOT NULL,
+    is_active        INTEGER NOT NULL DEFAULT 1,
+    is_main          INTEGER NOT NULL DEFAULT 0,
+    created_at       INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ad_settings (
+    key              TEXT PRIMARY KEY,
+    value            TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS post_spam (
     user_id     INTEGER NOT NULL,
     sent_at     INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS fake_stats (
-    key    TEXT PRIMARY KEY,
-    value  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS scheduled_deletions (
@@ -296,7 +307,7 @@ async def add_channel(chat_id: int, title: str, invite_link: Optional[str]) -> t
     """
     Добавляет канал, если его ещё нет в базе (по chat_id).
     Если канал уже существует — обновляет title/invite_link (если пришли новые)
-    и снимает архивную отметку, но НЕ создаёт дубликат.
+    и снимает архивн��ю отметку, но НЕ создаёт дубликат.
 
     Возвращает (channel_id, created), где created=True, если запись новая.
     """
@@ -611,3 +622,125 @@ async def cancel_scheduled_broadcast(sched_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM scheduled_broadcasts WHERE sched_id=?", (sched_id,))
         await db.commit()
+
+
+async def set_ad_setting(key: str, value: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO ad_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+        await db.commit()
+
+
+async def get_ad_setting(key: str, default: str = "1") -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("SELECT value FROM ad_settings WHERE key=?", (key,))
+        row = await cur.fetchone()
+        return row[0] if row else default
+
+
+async def ads_enabled() -> bool:
+    return (await get_ad_setting("ads_enabled", "1")) == "1"
+
+
+async def set_ads_enabled(enabled: bool) -> bool:
+    enabled_value = "1" if enabled else "0"
+    await set_ad_setting("ads_enabled", enabled_value)
+    return enabled
+
+
+async def toggle_ads_enabled() -> bool:
+    enabled = await ads_enabled()
+    await set_ads_enabled(not enabled)
+    return not enabled
+
+
+async def set_ads_mode(mode: str) -> str:
+    mode = mode if mode in {"main", "random"} else "main"
+    await set_ad_setting("ads_mode", mode)
+    return mode
+
+
+async def get_ads_mode() -> str:
+    return await get_ad_setting("ads_mode", "main")
+
+
+async def list_ad_posts(active_only: bool = False) -> list[aiosqlite.Row]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if active_only:
+            cur = await db.execute(
+                "SELECT * FROM ad_posts WHERE is_active=1 ORDER BY is_main DESC, created_at DESC"
+            )
+        else:
+            cur = await db.execute("SELECT * FROM ad_posts ORDER BY created_at DESC")
+        return await cur.fetchall()
+
+
+async def get_ad_post(ad_id: int) -> Optional[aiosqlite.Row]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM ad_posts WHERE ad_id=?", (ad_id,))
+        return await cur.fetchone()
+
+
+async def add_ad_post(user_id: int, content_type: str, content_data: dict) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO ad_posts (user_id, content_type, content_data, is_active, is_main, created_at) VALUES (?, ?, ?, 1, 0, ?)",
+            (user_id, content_type, json.dumps(content_data), _now()),
+        )
+        await db.commit()
+        return cur.lastrowid
+
+
+async def update_ad_post(ad_id: int, content_type: str, content_data: dict) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE ad_posts SET content_type=?, content_data=? WHERE ad_id=?",
+            (content_type, json.dumps(content_data), ad_id),
+        )
+        await db.commit()
+
+
+async def delete_ad_post(ad_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM ad_posts WHERE ad_id=?", (ad_id,))
+        await db.commit()
+
+
+async def set_ad_active(ad_id: int, active: bool) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE ad_posts SET is_active=? WHERE ad_id=?",
+            (int(active), ad_id),
+        )
+        await db.commit()
+
+
+async def set_ad_main(ad_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE ad_posts SET is_main=0 WHERE is_main=1")
+        await db.execute(
+            "UPDATE ad_posts SET is_main=1, is_active=1 WHERE ad_id=?",
+            (ad_id,),
+        )
+        await db.commit()
+        await set_ads_mode("main")
+
+
+async def pick_ad_for_user() -> Optional[aiosqlite.Row]:
+    ads = await list_ad_posts(active_only=True)
+    if not ads:
+        return None
+    mode = await get_ads_mode()
+    if mode == "main":
+        for ad in ads:
+            if ad["is_main"]:
+                return ad
+        return ads[0]
+    if mode == "random":
+        return random.choice(ads)
+    return ads[0]
+

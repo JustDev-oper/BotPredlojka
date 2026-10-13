@@ -31,6 +31,7 @@ def admin_panel_kb(is_owner: bool) -> InlineKeyboardMarkup:
     b.button(text="📈 Фейк-статистика", callback_data="adm:fakestats")
     b.button(text="🚫 Бан-лист", callback_data="adm:banlist")
     b.button(text="👥 Пользователи", callback_data="adm:users")
+    b.button(text="📣 Реклама", callback_data="adm:ads")
     b.button(text="📢 Рассылка (бот)", callback_data="adm:bcastbot")
     b.button(text="📋 Каналы", callback_data="adm:channels")
     b.button(text="💧 Водянка", callback_data="adm:water")
@@ -237,4 +238,39 @@ def banlist_kb(banned) -> InlineKeyboardMarkup:
         b.button(text=label, callback_data=f"ban:unban:{u['user_id']}")
     b.button(text="◀️ Назад", callback_data="adm:menu")
     b.adjust(1)
+    return b.as_markup()
+
+
+def ad_admin_menu_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="Список рекламы", callback_data="ad:list")
+    b.button(text="Пост на проверке", callback_data="ad:pending")
+    b.button(text="Пост отправлен", callback_data="ad:sent")
+    b.button(text="Стоп", callback_data="ad:toggle")
+    b.button(text="◀️ Назад", callback_data="adm:menu")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def ad_list_kb(ads) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for ad in ads:
+        status = "🔒 " if not ad["is_active"] else ""
+        main = "★ " if ad["is_main"] else ""
+        label = f"{main}{status}Реклама #{ad['ad_id']}"
+        b.button(text=label, callback_data=f"ad:preview:{ad['ad_id']}")
+    b.button(text="◀️ Назад", callback_data="adm:ads")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def ad_manage_kb(ad_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="Удалить", callback_data=f"ad:delete:{ad_id}")
+    b.button(text="Изменить", callback_data=f"ad:edit:{ad_id}")
+    b.button(text="Убрать из показа", callback_data=f"ad:hide:{ad_id}")
+    b.button(text="Сделать основным", callback_data=f"ad:main:{ad_id}")
+    b.button(text="Рандом показ", callback_data=f"ad:random:{ad_id}")
+    b.button(text="◀️ Назад", callback_data="ad:list")
+    b.adjust(2)
     return b.as_markup()

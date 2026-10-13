@@ -114,6 +114,12 @@ async def publish_post(call: CallbackQuery, bot: Bot):
     except Exception:
         pass
 
+    try:
+        from handlers.ads import send_ad_to_user
+        await send_ad_to_user(bot, post["user_id"])
+    except Exception:
+        pass
+
     await call.answer("Опубликовано")
 
 
@@ -138,6 +144,11 @@ async def reject_post(call: CallbackQuery, bot: Bot):
         await bot.send_message(post["user_id"], "❌ Ваш пост отклонён модератором.")
     except Exception:
         pass
+    try:
+        from handlers.ads import send_ad_to_user
+        await send_ad_to_user(bot, post["user_id"])
+    except Exception:
+        pass
     await call.answer("Отклонено")
 
 
@@ -156,6 +167,11 @@ async def ban_from_post(call: CallbackQuery, bot: Bot):
     try:
         await call.message.edit_reply_markup(reply_markup=None)
         await bot.send_message(call.message.chat.id, f"🚫 Пользователь {post['user_id']} забанен.")
+    except Exception:
+        pass
+    try:
+        from handlers.ads import send_ad_to_user
+        await send_ad_to_user(bot, post["user_id"])
     except Exception:
         pass
     await call.answer("Пользователь забанен")

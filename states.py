@@ -52,3 +52,7 @@ class FakeStats(StatesGroup):
 
 class RescheduleDelete(StatesGroup):
     waiting_datetime = State()
+
+
+class AdPromo(StatesGroup):
+    waiting_post = State()

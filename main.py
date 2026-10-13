@@ -12,7 +12,7 @@ from middlewares import BanCheckMiddleware
 from scheduler import autodelete_loop, scheduled_broadcast_loop
 
 from handlers import (
-    admin, applications, autodelete, broadcast_bot, broadcast_channels,
+    admin, ads, applications, autodelete, broadcast_bot, broadcast_channels,
     channel_membership, join_request, moderation, user,
 )
 
@@ -32,6 +32,7 @@ async def main() -> None:
     # Порядок важен: более специфичные роутеры (admin/moderation/...) регистрируем раньше,
     # user-роутер — последним, т.к. содержит "ловящие всё" хендлеры по состоянию FSM.
     dp.include_router(admin.router)
+    dp.include_router(ads.router)
     dp.include_router(applications.router)
     dp.include_router(broadcast_bot.router)
     dp.include_router(broadcast_channels.router)
