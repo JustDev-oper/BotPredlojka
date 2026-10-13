@@ -5,133 +5,164 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 import database as db
-from keyboards import ad_admin_menu_kb, ad_list_kb, ad_manage_kb, back_to_panel_kb
+from keyboards import ad_admin_menu_kb, ad_list_kb, ad_manage_kb, ad_pending_kb, back_to_panel_kb
 from states import AdPromo
 from utils import extract_content, send_ad_content
 
 router = Router(name="ads")
 
-
-def _ad_payload(ad_row) -> dict:
-    return json.loads(ad_row["content_data"])
+MODE_TITLES = {"main": "основная реклама", "random": "рандом"}
 
 
-async def _render_ad_preview(bot: Bot, chat_id: int, ad: dict, manage_markup=None):
-    data = _ad_payload(ad)
+async def _guard(call: CallbackQuery) -> bool:
+    if not await db.is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return False
+    return True
+
+
+async def _replace(call: CallbackQuery, text: str, markup=None):
+    """Edit the message; if it's a media post (can't edit_text) delete it and send a fresh one."""
     try:
-        await send_ad_content(bot, chat_id, ad["content_type"], data)
+        await call.message.edit_text(text, reply_markup=markup)
     except Exception:
-        await bot.send_message(chat_id, "Не удалось показать рекламный пост.")
-    if manage_markup is not None:
-        await bot.send_message(chat_id, "Управление рекламой:", reply_markup=manage_markup)
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+        await call.bot.send_message(call.message.chat.id, text, reply_markup=markup)
+
+
+async def _menu_text() -> str:
+    enabled = await db.ads_enabled()
+    mode = MODE_TITLES.get(await db.get_ads_mode(), "основная реклама")
+    return f"📣 Реклама: {'включена ✅' if enabled else 'остановлена ⏸'}\nРежим показа: {mode}"
+
+
+async def _list_text() -> str:
+    mode = MODE_TITLES.get(await db.get_ads_mode(), "основная реклама")
+    return f"Список рекламы (режим: {mode}):\n★ — основная, 🔒 — убрана из показа"
+
+
+async def _show_list(call: CallbackQuery):
+    ads = await db.list_ad_posts()
+    if not ads:
+        await _replace(call, "Список рекламы пуст.", back_to_panel_kb())
+    else:
+        await _replace(call, await _list_text(), ad_list_kb(ads))
 
 
 @router.callback_query(F.data == "adm:ads")
 async def ads_menu(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
-    await call.message.edit_text("📣 Реклама:", reply_markup=ad_admin_menu_kb())
+    await _replace(call, await _menu_text(), ad_admin_menu_kb(await db.ads_enabled()))
     await call.answer()
 
 
-@router.callback_query(F.data == "ad:list")
+@router.callback_query(F.data == "adv:list")
 async def ad_list(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
-    ads = await db.list_ad_posts()
-    if not ads:
-        await call.message.edit_text("Список рекламы пуст.", reply_markup=back_to_panel_kb())
-    else:
-        await call.message.edit_text("Список рекламы:", reply_markup=ad_list_kb(ads))
+    await _show_list(call)
     await call.answer()
 
 
-@router.callback_query(F.data.startswith("ad:preview:"))
+@router.callback_query(F.data.startswith("adv:preview:"))
 async def ad_preview(call: CallbackQuery, bot: Bot):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
     ad_id = int(call.data.split(":")[2])
     ad = await db.get_ad_post(ad_id)
     if not ad:
         await call.answer("Реклама не найдена", show_alert=True)
         return
-    await call.message.edit_text("Рекламный пост:", reply_markup=None)
-    await _render_ad_preview(bot, call.message.chat.id, dict(ad), ad_manage_kb(ad_id))
+    markup = ad_manage_kb(ad_id)
+    chat_id = call.message.chat.id  # только чат админа, нажавшего кнопку
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    try:
+        # кнопки управления — прямо под рекламным постом
+        await send_ad_content(bot, chat_id, ad["content_type"], json.loads(ad["content_data"]),
+                              reply_markup=markup)
+    except Exception:
+        await bot.send_message(chat_id, "Не удалось показать рекламный пост.", reply_markup=markup)
     await call.answer()
 
 
-@router.callback_query(F.data.startswith("ad:delete:"))
+@router.callback_query(F.data.startswith("adv:delete:"))
 async def ad_delete(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
-    ad_id = int(call.data.split(":")[2])
-    await db.delete_ad_post(ad_id)
+    await db.delete_ad_post(int(call.data.split(":")[2]))
     await call.answer("Удалено")
-    await call.message.edit_text("Список рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
+    await _show_list(call)
 
 
-@router.callback_query(F.data.startswith("ad:hide:"))
+@router.callback_query(F.data.startswith("adv:hide:"))
 async def ad_hide(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
     ad_id = int(call.data.split(":")[2])
-    ad = await db.get_ad_post(ad_id)
-    if not ad:
+    if not await db.get_ad_post(ad_id):
         await call.answer("Реклама не найдена", show_alert=True)
         return
     await db.set_ad_active(ad_id, False)
     await call.answer("Убрано из показа")
-    await call.message.edit_text("Список рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
+    await _show_list(call)
 
 
-@router.callback_query(F.data.startswith("ad:main:"))
+@router.callback_query(F.data.startswith("adv:main:"))
 async def ad_make_main(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
     ad_id = int(call.data.split(":")[2])
+    if not await db.get_ad_post(ad_id):
+        await call.answer("Реклама не найдена", show_alert=True)
+        return
     await db.set_ad_main(ad_id)
     await call.answer("Сделано основным для показа")
-    await call.message.edit_text("Спи��ок рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
+    await _show_list(call)
 
 
-@router.callback_query(F.data.startswith("ad:random:"))
+@router.callback_query(F.data.startswith("adv:random:"))
 async def ad_set_random(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
     await db.set_ads_mode("random")
-    await call.answer("Режим случайного показа включён")
-    await call.message.edit_text("Список рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
+    await call.answer("Включён рандомный показ среди активных реклам")
+    await _show_list(call)
 
 
-@router.callback_query(F.data.startswith("ad:edit:"))
+@router.callback_query(F.data.startswith("adv:edit:"))
 async def ad_edit_start(call: CallbackQuery, state: FSMContext):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
-    ad_id = int(call.data.split(":")[2])
-    await state.update_data(edit_ad_id=ad_id)
+    await state.update_data(edit_ad_id=int(call.data.split(":")[2]))
     await state.set_state(AdPromo.waiting_post)
-    await call.message.edit_text(
-        "Пришлите новый рекламный пост. Он заменит текущее объявление без потери форматирования.")
+    await _replace(call, "Пришлите новый рекламный пост. Он заменит текущий с сохранением оформления.")
     await call.answer()
 
 
-@router.callback_query(F.data == "ad:pending")
-async def ad_pending(call: CallbackQuery, state: FSMContext):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+@router.callback_query(F.data == "adv:pending")
+async def ad_pending(call: CallbackQuery):
+    if not await _guard(call):
+        return
+    await _replace(call, "Пост на проверке — рекламный пост, который видит автор предложки.",
+                   ad_pending_kb())
+    await call.answer()
+
+
+@router.callback_query(F.data == "adv:add")
+async def ad_add_start(call: CallbackQuery, state: FSMContext):
+    if not await _guard(call):
         return
     await state.update_data(edit_ad_id=None)
     await state.set_state(AdPromo.waiting_post)
-    await call.message.edit_text(
-        "Пришлите рекламный пост для сохранения в систему. Он будет сохранён полностью с оформлением.")
+    await _replace(call, "Пришлите рекламный пост (текст, фото, видео, файл или гиф). "
+                         "Он сохранится полностью: ссылки, жирный и другое оформление.")
     await call.answer()
 
 
@@ -140,9 +171,15 @@ async def ad_pending_save(message: Message, state: FSMContext):
     if not await db.is_admin(message.from_user.id):
         await state.clear()
         return
-    data = await state.get_data()
-    edit_ad_id = data.get("edit_ad_id")
+    unsupported = (message.media_group_id or message.sticker or message.voice or message.video_note
+                   or message.audio or message.poll or message.location or message.contact)
     content_type, content_data = extract_content(message)
+    empty = content_type == "text" and not (content_data.get("text") or "").strip()
+    if unsupported or empty:
+        await message.answer("Этот тип сообщения не поддерживается. Пришлите один пост: "
+                             "текст, фото, видео, файл или гиф (без альбомов).")
+        return
+    edit_ad_id = (await state.get_data()).get("edit_ad_id")
     if edit_ad_id is not None:
         await db.update_ad_post(edit_ad_id, content_type, content_data)
         await message.answer(f"Реклама #{edit_ad_id} обновлена.", reply_markup=back_to_panel_kb())
@@ -152,34 +189,39 @@ async def ad_pending_save(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data == "ad:sent")
+@router.callback_query(F.data == "adv:sent")
 async def ad_sent(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
-    await call.answer("Функция активна: после модерации реклама отправляется пользователю в ЛС.")
+    await _replace(
+        call,
+        "Пост отправлен — второй этап.\n"
+        "После решения модератора (опубликован / отклонён / автор забанен) реклама "
+        "в любом случае отправляется автору поста в личные сообщения. "
+        "В рабочий чат и админам она не приходит.\n\n" + await _menu_text(),
+        ad_admin_menu_kb(await db.ads_enabled()),
+    )
+    await call.answer()
 
 
-@router.callback_query(F.data == "ad:toggle")
+@router.callback_query(F.data == "adv:toggle")
 async def ad_toggle(call: CallbackQuery):
-    if not await db.is_admin(call.from_user.id):
-        await call.answer("Нет доступа", show_alert=True)
+    if not await _guard(call):
         return
     enabled = await db.toggle_ads_enabled()
-    await call.answer("Реклама включена" if enabled else "Реклама выключена")
-    await call.message.edit_text(f"📣 Реклама {'включена' if enabled else 'выключена'}.",
-                                 reply_markup=ad_admin_menu_kb())
+    await call.answer("Реклама запущена" if enabled else "Реклама остановлена")
+    await _replace(call, await _menu_text(), ad_admin_menu_kb(enabled))
 
 
 async def send_ad_to_user(bot: Bot, user_id: int) -> bool:
+    """Отправляет рекламу строго в ЛС автору поста (user_id = chat_id приватного чата)."""
     if not await db.ads_enabled():
         return False
     ad = await db.pick_ad_for_user(user_id)
     if not ad:
         return False
     try:
-        data = _ad_payload(ad)
-        await send_ad_content(bot, user_id, ad["content_type"], data)
+        await send_ad_content(bot, user_id, ad["content_type"], json.loads(ad["content_data"]))
         await db.set_last_ad_for_user(user_id, ad["ad_id"])
         return True
     except Exception:

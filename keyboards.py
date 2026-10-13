@@ -241,13 +241,21 @@ def banlist_kb(banned) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def ad_admin_menu_kb() -> InlineKeyboardMarkup:
+def ad_admin_menu_kb(enabled: bool = True) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="Список рекламы", callback_data="ad:list")
-    b.button(text="Пост на проверке", callback_data="ad:pending")
-    b.button(text="Пост отправлен", callback_data="ad:sent")
-    b.button(text="Стоп", callback_data="ad:toggle")
+    b.button(text="Список рекламы", callback_data="adv:list")
+    b.button(text="Пост на проверке", callback_data="adv:pending")
+    b.button(text="Пост отправлен", callback_data="adv:sent")
+    b.button(text="⏸ Стоп (остановить рекламу)" if enabled else "▶️ Запустить рекламу", callback_data="adv:toggle")
     b.button(text="◀️ Назад", callback_data="adm:menu")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def ad_pending_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="➕ Добавить рекламу", callback_data="adv:add")
+    b.button(text="◀️ Назад", callback_data="adm:ads")
     b.adjust(1)
     return b.as_markup()
 
@@ -257,8 +265,7 @@ def ad_list_kb(ads) -> InlineKeyboardMarkup:
     for ad in ads:
         status = "🔒 " if not ad["is_active"] else ""
         main = "★ " if ad["is_main"] else ""
-        label = f"{main}{status}Реклама #{ad['ad_id']}"
-        b.button(text=label, callback_data=f"ad:preview:{ad['ad_id']}")
+        b.button(text=f"{main}{status}Реклама #{ad['ad_id']}", callback_data=f"adv:preview:{ad['ad_id']}")
     b.button(text="◀️ Назад", callback_data="adm:ads")
     b.adjust(1)
     return b.as_markup()
@@ -266,11 +273,11 @@ def ad_list_kb(ads) -> InlineKeyboardMarkup:
 
 def ad_manage_kb(ad_id: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    b.button(text="Удалить", callback_data=f"ad:delete:{ad_id}")
-    b.button(text="Изменить", callback_data=f"ad:edit:{ad_id}")
-    b.button(text="Убрать из показа", callback_data=f"ad:hide:{ad_id}")
-    b.button(text="Сделать основным", callback_data=f"ad:main:{ad_id}")
-    b.button(text="Рандом показ", callback_data=f"ad:random:{ad_id}")
-    b.button(text="◀️ Назад", callback_data="ad:list")
-    b.adjust(2)
+    b.button(text="Удалить", callback_data=f"adv:delete:{ad_id}")
+    b.button(text="Изменить", callback_data=f"adv:edit:{ad_id}")
+    b.button(text="Убрать из показа", callback_data=f"adv:hide:{ad_id}")
+    b.button(text="Сделать основным для показа", callback_data=f"adv:main:{ad_id}")
+    b.button(text="Рандом показ", callback_data=f"adv:random:{ad_id}")
+    b.button(text="◀️ Назад", callback_data="adv:list")
+    b.adjust(2, 2, 1, 1)
     return b.as_markup()

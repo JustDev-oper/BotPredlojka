@@ -912,6 +912,8 @@ async def set_ad_active(ad_id: int, active: bool) -> None:
             "UPDATE ad_posts SET is_active=? WHERE ad_id=?",
             (int(active), ad_id),
         )
+        if not active:
+            await db.execute("UPDATE ad_posts SET is_main=0 WHERE ad_id=?", (ad_id,))
         await db.commit()
 
 
@@ -955,17 +957,11 @@ async def pick_ad_for_user(user_id: int) -> Optional[aiosqlite.Row]:
     if not ads:
         return None
 
-    last_ad_id = await get_last_ad_for_user(user_id)
-    candidates = [ad for ad in ads if ad["ad_id"] != last_ad_id]
-    if not candidates:
-        candidates = ads
-
     mode = await get_ads_mode()
     if mode == "main":
-        for ad in candidates:
-            if ad["is_main"]:
-                return ad
-        return candidates[0]
-    if mode == "random":
-        return random.choice(candidates)
-    return candidates[0]
+        # основная реклама показывается всегда; если не назначена — самая свежая активная
+        return next((ad for ad in ads if ad["is_main"]), ads[0])
+
+    last_ad_id = await get_last_ad_for_user(user_id)
+    candidates = [ad for ad in ads if ad["ad_id"] != last_ad_id] or ads
+    return random.choice(candidates)

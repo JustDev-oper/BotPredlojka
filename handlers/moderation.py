@@ -154,6 +154,9 @@ async def reject_post(call: CallbackQuery, bot: Bot):
 
 @router.callback_query(F.data.startswith("mod:ban:"))
 async def ban_from_post(call: CallbackQuery, bot: Bot):
+    if not await db.is_admin(call.from_user.id):
+        await call.answer("Нет доступа", show_alert=True)
+        return
     post_id = int(call.data.split(":")[2])
     post = await db.get_post(post_id)
     if not post:
