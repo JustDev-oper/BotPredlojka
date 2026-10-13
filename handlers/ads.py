@@ -97,7 +97,7 @@ async def ad_make_main(call: CallbackQuery):
     ad_id = int(call.data.split(":")[2])
     await db.set_ad_main(ad_id)
     await call.answer("Сделано основным для показа")
-    await call.message.edit_text("Список рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
+    await call.message.edit_text("Спи��ок рекламы:", reply_markup=ad_list_kb(await db.list_ad_posts()))
 
 
 @router.callback_query(F.data.startswith("ad:random:"))
@@ -174,12 +174,13 @@ async def ad_toggle(call: CallbackQuery):
 async def send_ad_to_user(bot: Bot, user_id: int) -> bool:
     if not await db.ads_enabled():
         return False
-    ad = await db.pick_ad_for_user()
+    ad = await db.pick_ad_for_user(user_id)
     if not ad:
         return False
     try:
         data = _ad_payload(ad)
         await send_ad_content(bot, user_id, ad["content_type"], data)
+        await db.set_last_ad_for_user(user_id, ad["ad_id"])
         return True
     except Exception:
         return False

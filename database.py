@@ -281,7 +281,13 @@ _SCHEMA = """
               INTEGER
               NOT
               NULL
-          ); \
+          );
+
+          CREATE TABLE IF NOT EXISTS ad_user_state (
+              user_id      INTEGER PRIMARY KEY,
+              last_ad_id   INTEGER,
+              sent_at      INTEGER NOT NULL DEFAULT 0
+          );
           """
 
 
@@ -769,7 +775,7 @@ async def get_scheduled(sched_id: int) -> Optional[aiosqlite.Row]:
         return await cur.fetchone()
 
 
-# --- scheduled broadcasts (рассылка всем пользователям бота в заданное время) --
+# --- scheduled broadcasts (рассылка в��ем пользователям бота в заданное время) --
 
 async def create_scheduled_broadcast(
         content_type: str, content_data: dict, send_at: int, created_by: Optional[int]
@@ -920,16 +926,46 @@ async def set_ad_main(ad_id: int) -> None:
         await set_ads_mode("main")
 
 
-async def pick_ad_for_user() -> Optional[aiosqlite.Row]:
+async def get_last_ad_for_user(user_id: int) -> Optional[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "SELECT last_ad_id FROM ad_user_state WHERE user_id=?",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        return row[0] if row and row[0] is not None else None
+
+
+async def set_last_ad_for_user(user_id: int, ad_id: Optional[int]) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO ad_user_state (user_id, last_ad_id, sent_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id) DO UPDATE SET last_ad_id=excluded.last_ad_id, sent_at=excluded.sent_at",
+            (user_id, ad_id, _now()),
+        )
+        await db.commit()
+
+
+async def clear_last_ad_for_user(user_id: int) -> None:
+    await set_last_ad_for_user(user_id, None)
+
+
+async def pick_ad_for_user(user_id: int) -> Optional[aiosqlite.Row]:
     ads = await list_ad_posts(active_only=True)
     if not ads:
         return None
+
+    last_ad_id = await get_last_ad_for_user(user_id)
+    candidates = [ad for ad in ads if ad["ad_id"] != last_ad_id]
+    if not candidates:
+        candidates = ads
+
     mode = await get_ads_mode()
     if mode == "main":
-        for ad in ads:
+        for ad in candidates:
             if ad["is_main"]:
                 return ad
-        return ads[0]
+        return candidates[0]
     if mode == "random":
-        return random.choice(ads)
-    return ads[0]
+        return random.choice(candidates)
+    return candidates[0]
