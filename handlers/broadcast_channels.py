@@ -9,9 +9,9 @@ from config import AUTODELETE_OPTIONS
 from keyboards import (
     autodelete_choice_kb, back_to_panel_kb, bcast_channels_kb, confirm_kb,
 )
+from middlewares import OwnerControlsMiddleware
 from states import BroadcastChannels
 from utils import extract_content, send_content
-from middlewares import OwnerControlsMiddleware
 
 router = Router(name="broadcast_channels")
 _controls_guard = OwnerControlsMiddleware()
@@ -33,7 +33,8 @@ async def start(call: CallbackQuery, state: FSMContext):
     _selected[call.from_user.id] = set()
     channels = await db.list_channels()
     await state.set_state(BroadcastChannels.choosing_channels)
-    await call.message.edit_text("📢 Рассылка по каналам — выберите каналы:", reply_markup=bcast_channels_kb(channels, set()))
+    await call.message.edit_text("📢 Рассылка по каналам — выберите каналы:",
+                                 reply_markup=bcast_channels_kb(channels, set()))
     await call.answer()
 
 

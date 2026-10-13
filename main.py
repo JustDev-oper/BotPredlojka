@@ -8,13 +8,12 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN
 from database import init_db
-from middlewares import BanCheckMiddleware
-from scheduler import autodelete_loop, scheduled_broadcast_loop
-
 from handlers import (
     admin, ads, applications, autodelete, broadcast_bot, broadcast_channels,
     channel_membership, join_request, moderation, user,
 )
+from middlewares import BanCheckMiddleware
+from scheduler import autodelete_loop, scheduled_broadcast_loop
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)

@@ -1,100 +1,288 @@
-import random
 import json
+import random
 import time
-from typing import Any, Optional
+from typing import Optional
 
 import aiosqlite
 
 from config import DB_PATH, OWNER_ID
 
 _SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    user_id      INTEGER PRIMARY KEY,
-    username     TEXT,
-    first_name   TEXT,
-    is_banned    INTEGER NOT NULL DEFAULT 0,
-    is_muted     INTEGER NOT NULL DEFAULT 0,
-    joined_at    INTEGER NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS users
+          (
+              user_id
+              INTEGER
+              PRIMARY
+              KEY,
+              username
+              TEXT,
+              first_name
+              TEXT,
+              is_banned
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              is_muted
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              joined_at
+              INTEGER
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS admins (
-    user_id   INTEGER PRIMARY KEY,
-    is_owner  INTEGER NOT NULL DEFAULT 0,
-    added_at  INTEGER NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS admins
+          (
+              user_id
+              INTEGER
+              PRIMARY
+              KEY,
+              is_owner
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              added_at
+              INTEGER
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS channels (
-    channel_id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id      INTEGER NOT NULL,
-    title        TEXT NOT NULL,
-    invite_link  TEXT,
-    archived     INTEGER NOT NULL DEFAULT 0,
-    water_text   TEXT
-);
+          CREATE TABLE IF NOT EXISTS channels
+          (
+              channel_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              chat_id
+              INTEGER
+              NOT
+              NULL,
+              title
+              TEXT
+              NOT
+              NULL,
+              invite_link
+              TEXT,
+              archived
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              water_text
+              TEXT
+          );
 
-CREATE TABLE IF NOT EXISTS applications (
-    app_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    channel_id  INTEGER NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',  -- pending / accepted
-    created_at  INTEGER NOT NULL,
-    UNIQUE(user_id, channel_id)
-);
+          CREATE TABLE IF NOT EXISTS applications
+          (
+              app_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              user_id
+              INTEGER
+              NOT
+              NULL,
+              channel_id
+              INTEGER
+              NOT
+              NULL,
+              status
+              TEXT
+              NOT
+              NULL
+              DEFAULT
+              'pending', -- pending / accepted
+              created_at
+              INTEGER
+              NOT
+              NULL,
+              UNIQUE
+          (
+              user_id,
+              channel_id
+          )
+              );
 
-CREATE TABLE IF NOT EXISTS posts (
-    post_id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id           INTEGER NOT NULL,
-    channel_id        INTEGER NOT NULL,
-    content_type      TEXT NOT NULL,   -- text / photo / video / document
-    content_data      TEXT NOT NULL,   -- JSON: {text, caption, file_id, entities}
-    status            TEXT NOT NULL DEFAULT 'pending',  -- pending/published/rejected
-    created_at        INTEGER NOT NULL,
-    admin_chat_id     INTEGER,
-    admin_message_id  INTEGER,
-    published_chat_id   INTEGER,
-    published_message_id INTEGER
-);
+          CREATE TABLE IF NOT EXISTS posts
+          (
+              post_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              user_id
+              INTEGER
+              NOT
+              NULL,
+              channel_id
+              INTEGER
+              NOT
+              NULL,
+              content_type
+              TEXT
+              NOT
+              NULL,      -- text / photo / video / document
+              content_data
+              TEXT
+              NOT
+              NULL,      -- JSON: {text, caption, file_id, entities}
+              status
+              TEXT
+              NOT
+              NULL
+              DEFAULT
+              'pending', -- pending/published/rejected
+              created_at
+              INTEGER
+              NOT
+              NULL,
+              admin_chat_id
+              INTEGER,
+              admin_message_id
+              INTEGER,
+              published_chat_id
+              INTEGER,
+              published_message_id
+              INTEGER
+          );
 
-CREATE TABLE IF NOT EXISTS ad_posts (
-    ad_id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id          INTEGER NOT NULL,
-    content_type     TEXT NOT NULL,
-    content_data     TEXT NOT NULL,
-    is_active        INTEGER NOT NULL DEFAULT 1,
-    is_main          INTEGER NOT NULL DEFAULT 0,
-    created_at       INTEGER NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS ad_posts
+          (
+              ad_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              user_id
+              INTEGER
+              NOT
+              NULL,
+              content_type
+              TEXT
+              NOT
+              NULL,
+              content_data
+              TEXT
+              NOT
+              NULL,
+              is_active
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              1,
+              is_main
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              created_at
+              INTEGER
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS ad_settings (
-    key              TEXT PRIMARY KEY,
-    value            TEXT NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS ad_settings
+          (
+              key
+              TEXT
+              PRIMARY
+              KEY,
+              value
+              TEXT
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS post_spam (
-    user_id     INTEGER NOT NULL,
-    sent_at     INTEGER NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS post_spam
+          (
+              user_id
+              INTEGER
+              NOT
+              NULL,
+              sent_at
+              INTEGER
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS scheduled_deletions (
-    sched_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id   INTEGER NOT NULL,
-    chat_id      INTEGER NOT NULL,
-    message_id   INTEGER NOT NULL,
-    delete_at    INTEGER,             -- NULL => не удалять
-    deleted      INTEGER NOT NULL DEFAULT 0,
-    created_at   INTEGER NOT NULL
-);
+          CREATE TABLE IF NOT EXISTS scheduled_deletions
+          (
+              sched_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              channel_id
+              INTEGER
+              NOT
+              NULL,
+              chat_id
+              INTEGER
+              NOT
+              NULL,
+              message_id
+              INTEGER
+              NOT
+              NULL,
+              delete_at
+              INTEGER, -- NULL => не удалять
+              deleted
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              created_at
+              INTEGER
+              NOT
+              NULL
+          );
 
-CREATE TABLE IF NOT EXISTS scheduled_broadcasts (
-    sched_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    content_type  TEXT NOT NULL,
-    content_data  TEXT NOT NULL,   -- JSON: {text, caption, file_id, ...}
-    send_at       INTEGER NOT NULL,
-    sent          INTEGER NOT NULL DEFAULT 0,
-    created_by    INTEGER,
-    created_at    INTEGER NOT NULL
-);
-"""
+          CREATE TABLE IF NOT EXISTS scheduled_broadcasts
+          (
+              sched_id
+              INTEGER
+              PRIMARY
+              KEY
+              AUTOINCREMENT,
+              content_type
+              TEXT
+              NOT
+              NULL,
+              content_data
+              TEXT
+              NOT
+              NULL, -- JSON: {text, caption, file_id, ...}
+              send_at
+              INTEGER
+              NOT
+              NULL,
+              sent
+              INTEGER
+              NOT
+              NULL
+              DEFAULT
+              0,
+              created_by
+              INTEGER,
+              created_at
+              INTEGER
+              NOT
+              NULL
+          ); \
+          """
 
 
 async def init_db() -> None:
@@ -191,9 +379,9 @@ async def upsert_user(user_id: int, username: Optional[str], first_name: Optiona
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT INTO users (user_id, username, first_name, joined_at)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET username=excluded.username,
-                                                   first_name=excluded.first_name""",
+               VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO
+            UPDATE SET username=excluded.username,
+                first_name=excluded.first_name""",
             (user_id, username, first_name, _now()),
         )
         await db.commit()
@@ -377,8 +565,7 @@ async def create_application(user_id: int, channel_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT INTO applications (user_id, channel_id, status, created_at)
-               VALUES (?, ?, 'pending', ?)
-               ON CONFLICT(user_id, channel_id) DO NOTHING""",
+               VALUES (?, ?, 'pending', ?) ON CONFLICT(user_id, channel_id) DO NOTHING""",
             (user_id, channel_id, _now()),
         )
         await db.commit()
@@ -458,8 +645,11 @@ async def set_post_channel(post_id: int, channel_id: int) -> None:
 async def mark_post_published(post_id: int, chat_id: int, message_id: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            """UPDATE posts SET status='published', published_chat_id=?, published_message_id=?
-               WHERE post_id=?""",
+            """UPDATE posts
+               SET status='published',
+                   published_chat_id=?,
+                   published_message_id=?
+               WHERE post_id = ?""",
             (chat_id, message_id, post_id),
         )
         await db.commit()
@@ -518,7 +708,7 @@ async def get_fake_stat(key: str) -> Optional[str]:
 # --- scheduled deletions -------------------------------------------------------
 
 async def add_scheduled_deletion(
-    channel_id: int, chat_id: int, message_id: int, delete_at: Optional[int]
+        channel_id: int, chat_id: int, message_id: int, delete_at: Optional[int]
 ) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -582,7 +772,7 @@ async def get_scheduled(sched_id: int) -> Optional[aiosqlite.Row]:
 # --- scheduled broadcasts (рассылка всем пользователям бота в заданное время) --
 
 async def create_scheduled_broadcast(
-    content_type: str, content_data: dict, send_at: int, created_by: Optional[int]
+        content_type: str, content_data: dict, send_at: int, created_by: Optional[int]
 ) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
@@ -743,4 +933,3 @@ async def pick_ad_for_user() -> Optional[aiosqlite.Row]:
     if mode == "random":
         return random.choice(ads)
     return ads[0]
-

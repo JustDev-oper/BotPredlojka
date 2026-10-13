@@ -2,7 +2,7 @@ import json
 
 from aiogram import Bot
 from aiogram.enums import ChatMemberStatus
-from aiogram.types import Message
+from aiogram.types import LinkPreviewOptions, Message
 
 NOT_MEMBER_STATUSES = {ChatMemberStatus.LEFT, ChatMemberStatus.KICKED}
 
@@ -60,6 +60,16 @@ async def send_content(bot: Bot, chat_id: int, content_type: str, data: dict, **
             chat_id, data["file_id"], caption=data.get("caption") or None, parse_mode="HTML", **kwargs
         )
     raise ValueError(f"Unknown content type {content_type}")
+
+
+async def send_ad_content(bot: Bot, chat_id: int, content_type: str, data: dict, **kwargs):
+    ad_kwargs = {
+        "link_preview_options": LinkPreviewOptions(is_disabled=True),
+        **kwargs,
+    }
+    if content_type == "text":
+        ad_kwargs["disable_web_page_preview"] = True
+    return await send_content(bot, chat_id, content_type, data, **ad_kwargs)
 
 
 def load_content(post_row) -> dict:

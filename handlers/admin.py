@@ -10,10 +10,10 @@ from keyboards import (
     channels_menu_kb, channels_pick_kb, fake_stats_kb, users_menu_kb,
     water_channels_kb,
 )
+from middlewares import OwnerControlsMiddleware
 from states import (
     ChannelAdd, ChannelRename, FakeStats, UsersManage, WaterSetup,
 )
-from middlewares import OwnerControlsMiddleware
 
 router = Router(name="admin")
 _controls_guard = OwnerControlsMiddleware(("adm:menu",))

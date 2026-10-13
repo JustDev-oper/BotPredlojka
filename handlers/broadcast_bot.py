@@ -7,9 +7,9 @@ from aiogram.types import CallbackQuery, Message
 
 import database as db
 from keyboards import back_to_panel_kb, bcast_bot_confirm_kb, bcast_bot_time_kb
+from middlewares import OwnerControlsMiddleware
 from states import BroadcastBot
 from utils import extract_content, send_content
-from middlewares import OwnerControlsMiddleware
 
 router = Router(name="broadcast_bot")
 _controls_guard = OwnerControlsMiddleware()

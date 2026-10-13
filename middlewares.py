@@ -31,10 +31,10 @@ class BanCheckMiddleware(BaseMiddleware):
     """Полностью блокирует забаненных пользователей (кроме отображения самого факта бана)."""
 
     async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        event: TelegramObject,
-        data: Dict[str, Any],
+            self,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            event: TelegramObject,
+            data: Dict[str, Any],
     ) -> Any:
         user = data.get("event_from_user")
         if user is not None:

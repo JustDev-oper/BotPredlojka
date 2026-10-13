@@ -31,8 +31,8 @@ async def on_bot_membership_changed(event: ChatMemberUpdated, bot: Bot) -> None:
     new_status = event.new_chat_member.status
 
     became_admin = (
-        new_status == ChatMemberStatus.ADMINISTRATOR
-        and old_status != ChatMemberStatus.ADMINISTRATOR
+            new_status == ChatMemberStatus.ADMINISTRATOR
+            and old_status != ChatMemberStatus.ADMINISTRATOR
     )
     if not became_admin:
         return

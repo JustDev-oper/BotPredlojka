@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 from aiogram import Bot, F, Router
@@ -8,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 import database as db
 from keyboards import ad_admin_menu_kb, ad_list_kb, ad_manage_kb, back_to_panel_kb
 from states import AdPromo
-from utils import extract_content, send_content
+from utils import extract_content, send_ad_content
 
 router = Router(name="ads")
 
@@ -20,7 +19,7 @@ def _ad_payload(ad_row) -> dict:
 async def _render_ad_preview(bot: Bot, chat_id: int, ad: dict, manage_markup=None):
     data = _ad_payload(ad)
     try:
-        await send_content(bot, chat_id, ad["content_type"], data)
+        await send_ad_content(bot, chat_id, ad["content_type"], data)
     except Exception:
         await bot.send_message(chat_id, "Не удалось показать рекламный пост.")
     if manage_markup is not None:
@@ -119,7 +118,8 @@ async def ad_edit_start(call: CallbackQuery, state: FSMContext):
     ad_id = int(call.data.split(":")[2])
     await state.update_data(edit_ad_id=ad_id)
     await state.set_state(AdPromo.waiting_post)
-    await call.message.edit_text("Пришлите новый рекламный пост. Он заменит текущее объявление без потери форматирования.")
+    await call.message.edit_text(
+        "Пришлите новый рекламный пост. Он заменит текущее объявление без потери форматирования.")
     await call.answer()
 
 
@@ -130,7 +130,8 @@ async def ad_pending(call: CallbackQuery, state: FSMContext):
         return
     await state.update_data(edit_ad_id=None)
     await state.set_state(AdPromo.waiting_post)
-    await call.message.edit_text("Пришлите рекламный пост для сохранения в систему. Он будет сохранён полностью с оформлением.")
+    await call.message.edit_text(
+        "Пришлите рекламный пост для сохранения в систему. Он будет сохранён полностью с оформлением.")
     await call.answer()
 
 
@@ -166,7 +167,8 @@ async def ad_toggle(call: CallbackQuery):
         return
     enabled = await db.toggle_ads_enabled()
     await call.answer("Реклама включена" if enabled else "Реклама выключена")
-    await call.message.edit_text(f"📣 Реклама {'включена' if enabled else 'выключена'}.", reply_markup=ad_admin_menu_kb())
+    await call.message.edit_text(f"📣 Реклама {'включена' if enabled else 'выключена'}.",
+                                 reply_markup=ad_admin_menu_kb())
 
 
 async def send_ad_to_user(bot: Bot, user_id: int) -> bool:
@@ -177,7 +179,7 @@ async def send_ad_to_user(bot: Bot, user_id: int) -> bool:
         return False
     try:
         data = _ad_payload(ad)
-        await send_content(bot, user_id, ad["content_type"], data)
+        await send_ad_content(bot, user_id, ad["content_type"], data)
         return True
     except Exception:
         return False

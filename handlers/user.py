@@ -7,7 +7,7 @@ import database as db
 from config import ANTISPAM_POST_LIMIT, ANTISPAM_WINDOW_SECONDS
 from keyboards import channels_list_kb, check_sub_kb
 from states import PostFlow
-from utils import extract_content, is_subscribed, send_content
+from utils import extract_content, is_subscribed
 
 router = Router(name="user")
 

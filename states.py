@@ -2,16 +2,16 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class PostFlow(StatesGroup):
-    waiting_post = State()          # пользователь выбрал канал, ждём контент поста
+    waiting_post = State()  # пользователь выбрал канал, ждём контент поста
 
 
 class AdminReply(StatesGroup):
-    waiting_reply = State()         # админ цитирует пост и пишет ответ (обрабатывается через reply, но
-                                     # оставлено на случай FSM-варианта)
+    waiting_reply = State()  # админ цитирует пост и пишет ответ (обрабатывается через reply, но
+    # оставлено на случай FSM-варианта)
 
 
 class ChannelAdd(StatesGroup):
-    waiting_forward = State()       # ждём пересланное сообщение из канала, чтобы получить chat_id
+    waiting_forward = State()  # ждём пересланное сообщение из канала, чтобы получить chat_id
 
 
 class ChannelRename(StatesGroup):
@@ -25,8 +25,8 @@ class WaterSetup(StatesGroup):
 
 class BroadcastBot(StatesGroup):
     waiting_message = State()
-    waiting_confirm = State()       # показали превью, ждём подтверждение и выбор "сейчас"/"по времени"
-    waiting_datetime = State()      # ждём дату и время отправки
+    waiting_confirm = State()  # показали превью, ждём подтверждение и выбор "сейчас"/"по времени"
+    waiting_datetime = State()  # ждём дату и время отправки
 
 
 class BroadcastChannels(StatesGroup):
