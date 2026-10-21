@@ -7,7 +7,7 @@ import database as db
 from config import ANTISPAM_POST_LIMIT, ANTISPAM_WINDOW_SECONDS
 from keyboards import channels_list_kb, check_sub_kb
 from states import PostFlow
-from utils import extract_content, is_subscribed
+from utils import collect_album, extract_album, extract_content, is_subscribed
 
 router = Router(name="user")
 
@@ -60,7 +60,7 @@ async def choose_channel(call: CallbackQuery, bot: Bot, state: FSMContext):
     await state.update_data(channel_id=channel_id)
     await state.set_state(PostFlow.waiting_post)
     await call.message.edit_text(
-        f"Канал: «{channel['title']}»\nПришлите пост (текст, фото, видео или документ)."
+        f"Канал: «{channel['title']}»\nПришлите пост (текст, фото, видео или документ; можно несколько медиа сразу с общей подписью)."
     )
     await call.answer()
 
@@ -85,13 +85,19 @@ async def check_sub(call: CallbackQuery, bot: Bot, state: FSMContext):
     await state.update_data(channel_id=channel_id)
     await state.set_state(PostFlow.waiting_post)
     await call.message.edit_text(
-        f"Канал: «{channel['title']}»\nПришлите пост (текст, фото, видео или документ)."
+        f"Канал: «{channel['title']}»\nПришлите пост (текст, фото, видео или документ; можно несколько медиа сразу с общей подписью)."
     )
     await call.answer()
 
 
 @router.message(PostFlow.waiting_post)
 async def receive_post(message: Message, bot: Bot, state: FSMContext):
+    # альбом приходит несколькими сообщениями — склеиваем в один пост (с общей подписью)
+    album = None
+    if message.media_group_id:
+        album = await collect_album(message)
+        if album is None:
+            return  # остальные части альбома обработает первое сообщение
     if await db.is_banned(message.from_user.id):
         await message.answer("Вы заблокированы.")
         await state.clear()
@@ -116,7 +122,7 @@ async def receive_post(message: Message, bot: Bot, state: FSMContext):
         )
         return
 
-    content_type, content_data = extract_content(message)
+    content_type, content_data = extract_album(album) if album else extract_content(message)
     post_id = await db.create_post(message.from_user.id, channel_id, content_type, content_data)
     await db.register_post_sent(message.from_user.id)
 

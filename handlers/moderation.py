@@ -54,7 +54,16 @@ async def notify_admins_new_post(bot: Bot, post_id: int) -> None:
     for admin in admins:
         try:
             sent = None
-            if post["content_type"] == "text":
+            is_album = post["content_type"] == "album"
+            if is_album:
+                group = await send_content(bot, admin["user_id"], "album", data)
+                sent = await bot.send_message(
+                    admin["user_id"],
+                    f"📎 Альбом: {len(data['items'])} медиа" + footer,
+                    reply_markup=moderation_kb(post_id, bool(admin["is_owner"])),
+                    reply_to_message_id=group[0].message_id,
+                )
+            elif post["content_type"] == "text":
                 text = data.get("text", "") + footer
                 sent = await bot.send_message(admin["user_id"], text, parse_mode="HTML")
             else:
@@ -63,11 +72,12 @@ async def notify_admins_new_post(bot: Bot, post_id: int) -> None:
                     bot, admin["user_id"], post["content_type"],
                     {**data, "caption": caption},
                 )
-            await bot.edit_message_reply_markup(
-                chat_id=admin["user_id"],
-                message_id=sent.message_id,
-                reply_markup=moderation_kb(post_id, bool(admin["is_owner"])),
-            )
+            if not is_album:
+                await bot.edit_message_reply_markup(
+                    chat_id=admin["user_id"],
+                    message_id=sent.message_id,
+                    reply_markup=moderation_kb(post_id, bool(admin["is_owner"])),
+                )
             # запоминаем только первое админ-сообщение как основное для дальнейших правок карточки
             existing = await db.get_post(post_id)
             if not existing["admin_chat_id"]:
@@ -101,7 +111,8 @@ async def publish_post(call: CallbackQuery, bot: Bot):
             data["caption"] = (data.get("caption", "") + "\n" + water).strip()
 
     sent = await send_content(bot, channel["chat_id"], post["content_type"], data, disable_notification=True)
-    await db.mark_post_published(post_id, channel["chat_id"], sent.message_id)
+    first = sent[0] if isinstance(sent, list) else sent
+    await db.mark_post_published(post_id, channel["chat_id"], first.message_id)
 
     try:
         await call.message.edit_reply_markup(reply_markup=None)

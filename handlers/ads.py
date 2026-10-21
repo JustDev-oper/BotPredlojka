@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, Message
 import database as db
 from keyboards import ad_admin_menu_kb, ad_list_kb, ad_manage_kb, ad_pending_kb, back_to_panel_kb
 from states import AdPromo
-from utils import extract_content, send_ad_content
+from utils import collect_album, extract_album, extract_content, send_ad_content
 
 router = Router(name="ads")
 
@@ -171,14 +171,25 @@ async def ad_pending_save(message: Message, state: FSMContext):
     if not await db.is_admin(message.from_user.id):
         await state.clear()
         return
-    unsupported = (message.media_group_id or message.sticker or message.voice or message.video_note
+    if message.media_group_id:
+        album = await collect_album(message)
+        if album is None:
+            return
+        content_type, content_data = extract_album(album)
+        await _save_ad(message, state, content_type, content_data)
+        return
+    unsupported = (message.sticker or message.voice or message.video_note
                    or message.audio or message.poll or message.location or message.contact)
     content_type, content_data = extract_content(message)
     empty = content_type == "text" and not (content_data.get("text") or "").strip()
     if unsupported or empty:
         await message.answer("Этот тип сообщения не поддерживается. Пришлите один пост: "
-                             "текст, фото, видео, файл или гиф (без альбомов).")
+                             "текст, фото, видео, файл, гиф или альбом.")
         return
+    await _save_ad(message, state, content_type, content_data)
+
+
+async def _save_ad(message: Message, state: FSMContext, content_type: str, content_data: dict):
     edit_ad_id = (await state.get_data()).get("edit_ad_id")
     if edit_ad_id is not None:
         await db.update_ad_post(edit_ad_id, content_type, content_data)
